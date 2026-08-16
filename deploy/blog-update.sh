@@ -34,7 +34,8 @@ fi
 
 # 3) 拉代码 + 装依赖 + build（VAULT_ROOT 指向工作台）
 git pull --ff-only origin main >> "$LOG" 2>&1 || { log "WARN: git pull 失败，保留旧版 build"; }
-npm ci --omit=dev >> "$LOG" 2>&1 || npm install --omit=dev >> "$LOG" 2>&1
+# devDependencies 必须装（vite / plugin-react 在 devDependencies）
+NODE_ENV=development npm install --include=dev >> "$LOG" 2>&1 || npm install >> "$LOG" 2>&1
 if [ -d "$WORKBENCH_DIR" ] && [ "$(ls -A "$WORKBENCH_DIR" 2>/dev/null)" ]; then
     VAULT_ROOT="$WORKBENCH_DIR" npm run build >> "$LOG" 2>&1
 else
