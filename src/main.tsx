@@ -10,8 +10,8 @@ import "./styles.css";
 // 全局滚动渐入引擎：业务元素只需加 class="reveal"（详见 lib/reveal-engine.ts），勿删
 initRevealEngine();
 
-// 全局滚动视差：把 window.scrollY 写入 :root --scroll-y,
-// 所有 .parallax-layer 用 CSS 变量算 transform,只挂一次 scroll 监听
+// 全局滚动变量：把 window.scrollY 写入 :root --scroll-y CSS 变量
+// 旧版 .parallax-layer 视差已废弃（素材已删除），仅保留 hook 供未来复用
 initGlobalScroll();
 
 const router = getRouter();
