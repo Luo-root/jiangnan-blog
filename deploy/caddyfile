@@ -1,0 +1,19 @@
+# ============================================================
+#  Caddyfile · 遇见江楠 静态博客
+#  被 deploy/setup-vps.sh 自动写入 /etc/caddy/Caddyfile
+#  也可手动复制：Caddyfile 路径 → /etc/caddy/Caddyfile
+# ============================================================
+
+# 1) 主域 + www 都直接服务静态文件
+#    Caddy 自动申请/续期 Let's Encrypt 证书
+www.jiangnanstudio.cloud, jiangnanstudio.cloud {
+    root * /home/studio/app/public
+    encode gzip zstd
+    try_files {path} {path}/ /index.html
+    file_server
+    header {
+        Cache-Control "public, max-age=2592000"
+    }
+    @assets path /assets/*
+    header @assets Cache-Control "public, max-age=2592000, immutable"
+}
