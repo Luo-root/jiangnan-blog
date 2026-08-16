@@ -30,33 +30,52 @@ echo "[1/6] 安装基础依赖..."
 apt-get update -qq
 apt-get install -y -qq git curl rsync ca-certificates
 
-# ---- 2. Node.js 20 ----
-echo "[2/6] 安装 Node.js 20..."
+# ---- 2. Node.js 20 (直接下二进制，绕过 GitHub/NodeSource) ----
+echo "[2/6] 安装 Node.js 20 (二进制)..."
+export DEBIAN_FRONTEND=noninteractive
 if ! command -v node >/dev/null 2>&1; then
-    mkdir -p /etc/apt/keyrings
-    curl -fsSL https://deb.nodesource.com/gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
-    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
-        > /etc/apt/sources.list.d/nodesource.list
-    apt-get update -qq
-    apt-get install -y -qq nodejs
+    NODE_VER=20.18.0
+    cd /tmp
+    curl -fsSLO "https://nodejs.org/dist/v${NODE_VER}/node-v${NODE_VER}-linux-x64.tar.xz"
+    tar -xJf "node-v${NODE_VER}-linux-x64.tar.xz" -C /usr/local --strip-components=1
+    rm -f "node-v${NODE_VER}-linux-x64.tar.xz"
 fi
 echo "    node $(node -v) / npm $(npm -v)"
 
-# ---- 3. 准备目录结构 ----
-echo "[3/6] 准备目录结构..."
+# ---- 3. 准备目录结构 + 解压工作台（内容源） ----
+echo "[3/6] 准备目录结构 + 工作台..."
 mkdir -p "$APP_DIR" "$BUILD_DIR" "$PUBLIC_DIR" "$LOG_DIR" "$WORKBENCH_DIR"
 chown -R "$DEPLOY_USER":"$DEPLOY_USER" "$APP_DIR" "$WORKBENCH_DIR"
 chown -R "$DEPLOY_USER":"$DEPLOY_USER" "$LOG_DIR" 2>/dev/null || true
 
-# ---- 4. 克隆代码 ----
-echo "[4/6] 克隆博客代码..."
-if [ ! -d "$REPO_DIR/.git" ]; then
-    sudo -u "$DEPLOY_USER" git clone -b "$BRANCH" "$REPO_URL" "$REPO_DIR"
-else
-    sudo -u "$DEPLOY_USER" git -C "$REPO_DIR" pull --ff-only origin "$BRANCH"
+# 工作台内容（VAULT_ROOT 数据源）— 优先 /tmp/workbench.tar.gz，否则从 /home/studio/workbench 同步
+if [ -f /tmp/workbench.tar.gz ]; then
+    rm -rf "$WORKBENCH_DIR"/*
+    tar -xzf /tmp/workbench.tar.gz -C "$WORKBENCH_DIR"
+    chown -R "$DEPLOY_USER":"$DEPLOY_USER" "$WORKBENCH_DIR"
+    echo "    工作台已从 /tmp/workbench.tar.gz 解压到 $WORKBENCH_DIR"
 fi
-cd "$REPO_DIR"
-sudo -u "$DEPLOY_USER" npm ci --omit=dev || sudo -u "$DEPLOY_USER" npm install
+
+# ---- 4. 克隆代码（优先 GitHub，失败 fallback 本地 tarball） ----
+echo "[4/6] 准备代码..."
+if [ -d "$REPO_DIR/.git" ]; then
+    cd "$REPO_DIR"
+    sudo -u "$DEPLOY_USER" git pull --ff-only origin "$BRANCH" 2>&1 || true
+elif [ -f /tmp/blog.tar.gz ]; then
+    echo "    本地 tarball 解压到 $REPO_DIR"
+    mkdir -p "$REPO_DIR"
+    tar -xzf /tmp/blog.tar.gz -C "$REPO_DIR"
+    cd "$REPO_DIR"
+    # 用 tarball 时强制重新构建（不依赖 lockfile 一致性）
+    sudo -u "$DEPLOY_USER" npm install
+elif timeout 60 sudo -u "$DEPLOY_USER" git clone --depth 1 -b "$BRANCH" "$REPO_URL" "$REPO_DIR" 2>/dev/null; then
+    echo "    GitHub clone 成功"
+    cd "$REPO_DIR"
+    sudo -u "$DEPLOY_USER" npm ci --omit=dev || sudo -u "$DEPLOY_USER" npm install
+else
+    echo "ERROR: 既无 /tmp/blog.tar.gz 也连不上 GitHub，请先 scp 上传 tarball"
+    exit 1
+fi
 
 # ---- 5. 安装并配置 Caddy ----
 echo "[5/6] 安装 Caddy..."
@@ -102,9 +121,21 @@ systemctl enable caddy
 # ---- 6. 首次 build + 部署 ----
 echo "[6/6] 首次 build + 部署..."
 cd "$REPO_DIR"
-sudo -u "$DEPLOY_USER" npm run build
-rsync -a --delete "$BUILD_DIR/" "$PUBLIC_DIR/"
-chown -R "$DEPLOY_USER":"$DEPLOY_USER" "$PUBLIC_DIR"
+# VAULT_ROOT 指工作台，build 时 vite 插件会扫描图片/正文
+if [ -d "$WORKBENCH_DIR" ] && [ "$(ls -A "$WORKBENCH_DIR" 2>/dev/null)" ]; then
+    sudo -u "$DEPLOY_USER" env VAULT_ROOT="$WORKBENCH_DIR" npm run build
+else
+    echo "    警告：$WORKBENCH_DIR 为空，build 会用空 vault（页面会没文章）"
+    sudo -u "$DEPLOY_USER" npm run build
+fi
+if [ -d "$BUILD_DIR/dist" ]; then
+    rsync -a --delete "$BUILD_DIR/dist/" "$PUBLIC_DIR/"
+    chown -R "$DEPLOY_USER":"$DEPLOY_USER" "$PUBLIC_DIR"
+    echo "    ✅ 部署完成: $(du -sh "$PUBLIC_DIR" 2>&1 | cut -f1)"
+else
+    echo "    ❌ build 失败：$BUILD_DIR/dist 不存在"
+    exit 1
+fi
 
 # ---- systemd 定时更新（可选，cron 风格） ----
 cat > /etc/cron.d/blog-pull <<EOF

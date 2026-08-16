@@ -11,15 +11,18 @@ REPO_DIR="/home/studio/app/repo"
 BUILD_DIR="/home/studio/app/build"
 PUBLIC_DIR="/home/studio/app/public"
 BACKUP_DIR="/home/studio/app/public.bak"
+WORKBENCH_DIR="/home/studio/workbench"
 LOG="/var/log/blog-deploy/update.log"
 
 log() { echo "[$(date -Iseconds)] $*" >> "$LOG"; }
 
 # 1) 拉取
 cd "$REPO_DIR" || { log "FATAL: $REPO_DIR 不存在"; exit 1; }
-git fetch origin main
+git fetch origin main 2>>"$LOG" || { log "WARN: git fetch 失败（可能 VPS 无 GitHub 通路），跳过代码更新"; VAULT_FETCH_OK=0; }
+VAULT_FETCH_OK=${VAULT_FETCH_OK:-1}
+[ "$VAULT_FETCH_OK" = "0" ] && { log "工作台模式：仅 rebuild"; }
 LOCAL=$(git rev-parse HEAD)
-REMOTE=$(git rev-parse origin/main)
+REMOTE=$(git rev-parse origin/main 2>/dev/null || echo "$LOCAL")
 [ "$LOCAL" = "$REMOTE" ] && { log "no changes ($LOCAL)"; exit 0; }
 log "update: $LOCAL -> $REMOTE"
 
@@ -29,10 +32,14 @@ if [ -d "$PUBLIC_DIR" ] && [ "$(ls -A "$PUBLIC_DIR" 2>/dev/null)" ]; then
     cp -a "$PUBLIC_DIR" "$BACKUP_DIR"
 fi
 
-# 3) 拉代码 + 装依赖 + build
-git pull --ff-only origin main
+# 3) 拉代码 + 装依赖 + build（VAULT_ROOT 指向工作台）
+git pull --ff-only origin main >> "$LOG" 2>&1 || { log "WARN: git pull 失败，保留旧版 build"; }
 npm ci --omit=dev >> "$LOG" 2>&1 || npm install --omit=dev >> "$LOG" 2>&1
-npm run build >> "$LOG" 2>&1
+if [ -d "$WORKBENCH_DIR" ] && [ "$(ls -A "$WORKBENCH_DIR" 2>/dev/null)" ]; then
+    VAULT_ROOT="$WORKBENCH_DIR" npm run build >> "$LOG" 2>&1
+else
+    npm run build >> "$LOG" 2>&1
+fi
 
 # 4) 同步到 public
 if [ -d "$BUILD_DIR/dist" ]; then
