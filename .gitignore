@@ -1,0 +1,143 @@
+# 閫氱敤
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+*.orig
+
+# 鐜鍙橀噺涓庡瘑閽?.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# 绯荤粺鏂囦欢
+.DS_Store
+Thumbs.db
+
+# 缂栬緫鍣ㄤ笌 IDE
+.idea/
+.vscode/
+
+# Node.js / JavaScript / TypeScript
+node_modules/
+*.tsbuildinfo
+dist/
+build/
+.next/
+.nuxt/
+.cache/
+coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+ENV/
+pip-wheel-metadata/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Mobile build outputs
+*.apk
+*.aab
+*.ipa
+*.xarchive
+
+# Java / Kotlin
+target/
+*.class
+*.jar
+*.war
+*.ear
+.gradle/
+out/
+
+# Go
+bin/
+*.test
+coverage.out
+
+# C / C++
+*.o
+*.obj
+*.so
+*.a
+*.lib
+*.dll
+*.dylib
+*.exe
+CMakeFiles/
+CMakeCache.txt
+cmake-build-*/
+compile_commands.json
+Makefile
+
+# Rust
+target/
+
+# C#
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+bin/
+obj/
+
+# Ruby & PHP / Composer锛歚/vendor/` 浠呭拷鐣ヤ粨搴撴牴鐩綍涓嬬殑 vendor锛堜笉鍖呭惈 src/pages/vendor/ 绛夛級
+.bundle/
+/vendor/
+
+# OneDay 涓棿浜х墿鐩綍锛堟枃浠跺鐞嗘椂鐨勪复鏃舵枃浠讹紝涓嶉渶瑕佹寔涔呭寲锛?tmp/
+
+# other
+.meoo
+.stats
+.config
+.accesslog
+
+# 娌欑宕╂簝锛?浜х敓鐨勬枃浠?/core
+/.core.hmbtNy
+/.core.dump
+
+# 项目临时 / 后台进程
+.backup/
+.microcompact/
+.plan/
+.preview-greenkey/
+.tanstack/
+.todo/
+.websearch/
+.workbuddy/
+
+# TanStack Router 路由树：
+routeTree.gen.ts
+
+# 本地工具产物
+meoo-manifest.json
+.meoo-manifest.json
+# 早期主题图候选稿（已废弃）
+assets/theme-candidate/
+public/assets/parallax/
+# 调试用一次性脚本（不应入主仓）
+tools/_temp_*.py
+tools/_patch_slug.py
+tools/_crop_celestial.py
+tools/green_key.py
+tools/debug-hero.*
+tools/_archived/

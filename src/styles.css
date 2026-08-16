@@ -1,0 +1,1170 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+@import "katex/dist/katex.min.css";
+@import "highlight.js/styles/github-dark.css";
+
+html, body {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(27,43,51,0.18) transparent;
+  /* 关键：html 与 body 都铺上主题底色，避免 body::after 的 mix-blend-mode
+     穿透到浏览器默认白底，导致暗主题下整页背景被「提亮」出现双色断层。 */
+  background-color: var(--color-background);
+}
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(27,43,51,0.18);
+  border-radius: 999px;
+}
+
+.dark {
+  scrollbar-color: rgba(230,237,243,0.16) transparent;
+}
+.dark::-webkit-scrollbar-thumb {
+  background: rgba(230,237,243,0.16);
+}
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  /* 墨分五色：焦 / 浓 / 重 / 淡 / 清 */
+  --color-ink-1: var(--ink-1);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
+  --color-ink-5: var(--ink-5);
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
+  --font-mono: var(--font-mono);
+  --font-calligraphy: var(--font-calligraphy);
+}
+
+:root {
+  --radius: 0.375rem;
+  --fx-dur: 300ms;
+  --fx-ease: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --font-sans: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-serif: "Noto Serif SC", Georgia, "Songti SC", "Source Han Serif SC", ui-serif, serif;
+  --font-calligraphy: "Ma Shan Zheng", "Noto Serif SC", "Songti SC", ui-serif, serif;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* ===== 朝曦 · 冷青色体系：晴空·石青·石绿·朱砂暖锚 ===== */
+  --dawn-paper: #F6F8F5;
+  --dawn-sunpaper: #FFFFFF;
+  --dawn-cinnabar: #C5392B;
+  --dawn-ochre: #8B6B4F;
+  --dawn-pine: #8FC2DF;       /* 原松绿 → 晴空 */
+  --dawn-ink: #2A353B;
+  --dawn-ink-soft: #6B7A82;
+  --dawn-gold: #EDBD57;
+  --dawn-sprout: #33916C;     /* 原新芽绿 → 石绿 */
+  --dawn-peach: #8FD0CC;      /* 原桃粉 → 冰川青 */
+
+  --ink-1: #2A353B;
+  --ink-2: #4A5961;
+  --ink-3: #6B7A82;
+  --ink-4: #8B9BA3;
+  --ink-5: #B7C3C9;
+
+  --background: #F6F8F5;
+  --foreground: #2A353B;
+  --card: #FFFFFF;
+  --card-foreground: #2A353B;
+  --popover: #FFFFFF;
+  --popover-foreground: #2A353B;
+  --primary: #2B7CA6;         /* 石青 */
+  --primary-foreground: #F6F8F5;
+  --secondary: #E6EEF0;
+  --secondary-foreground: #4A5961;
+  --muted: #EDF2F1;
+  --muted-foreground: #6B7A82;
+  --accent: #33916C;          /* 石绿 */
+  --accent-foreground: #F6F8F5;
+  --destructive: #C5392B;
+  --destructive-foreground: #F6F8F5;
+  --border: #D8E1E3;
+  --input: #D8E1E3;
+  --ring: #2B7CA6;
+  --chart-1: #2B7CA6;
+  --chart-2: #33916C;
+  --chart-3: #8FC2DF;
+  --chart-4: #C5392B;
+  --chart-5: #8B6B4F;
+  --sidebar: #F0F4F3;
+  --sidebar-foreground: #2A353B;
+  --sidebar-primary: #2B7CA6;
+  --sidebar-primary-foreground: #F6F8F5;
+  --sidebar-accent: #E6EEF0;
+  --sidebar-accent-foreground: #4A5961;
+  --sidebar-border: #D8E1E3;
+  --sidebar-ring: #2B7CA6;
+}
+
+.dark {
+  --fx-dur: 480ms;
+  --fx-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* ===== 夜隐 · 子夜玄青体系：月白·冰川青·黛蓝 ===== */
+  --night-sky: #0C1421;
+  --night-indigo: #16222F;
+  --night-moon: #E6EDF3;
+  --night-bronze: #8FD0CC;    /* 原铜色 → 冰川青 */
+  --night-glacier: #8FD0CC;   /* 冰川青 */
+  --night-purple: #24405C;    /* 原紫 → 黛蓝 */
+  --night-frost: #A9C7E8;
+  --night-deep: #060810;
+  --night-ink: #E6EDF3;
+  --night-ink-soft: #C6D5DF;
+
+  --ink-1: #E6EDF3;
+  --ink-2: #C6D5DF;
+  --ink-3: #A2B6C2;
+  --ink-4: #7A91A0;
+  --ink-5: #45596B;
+
+  --background: #0C1421;
+  --foreground: #E6EDF3;
+  --card: #16222F;
+  --card-foreground: #E6EDF3;
+  --popover: #16222F;
+  --popover-foreground: #E6EDF3;
+  --primary: #8FD0CC;         /* 冰川青 */
+  --primary-foreground: #0C1421;
+  --secondary: #24405C;       /* 黛蓝 */
+  --secondary-foreground: #E6EDF3;
+  --muted: #111B28;
+  --muted-foreground: #9BB0BD;
+  --accent: #24405C;
+  --accent-foreground: #E6EDF3;
+  --destructive: #D9796D;
+  --destructive-foreground: #0C1421;
+  --border: rgba(230,237,243,0.18);
+  --input: rgba(230,237,243,0.24);
+  --ring: #E6EDF3;
+  --chart-1: #8FD0CC;
+  --chart-2: #E6EDF3;
+  --chart-3: #24405C;
+  --chart-4: #8FB7C9;
+  --chart-5: #6B93A8;
+  --sidebar: #111B28;
+  --sidebar-foreground: #E6EDF3;
+  --sidebar-primary: #8FD0CC;
+  --sidebar-primary-foreground: #0C1421;
+  --sidebar-accent: #24405C;
+  --sidebar-accent-foreground: #E6EDF3;
+  --sidebar-border: rgba(230,237,243,0.18);
+  --sidebar-ring: #E6EDF3;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    min-height: 100%;
+    /* 单一背景色，不再用 linear-gradient：长页面里 #FFFFFF → #F6F8F5 的渐变会
+       在中段产生明显的双色断层（用户连续反馈）。统一为 --background (#F6F8F5)。 */
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    transition: background-color 1100ms cubic-bezier(0.45, 0, 0.55, 1), color 1100ms cubic-bezier(0.45, 0, 0.55, 1);
+    position: relative;
+    /* 隔离 body::after 的 mix-blend-mode，让它只在 body 自己的背景上混合，
+       不穿透到 html 的透明底 / 浏览器 canvas，避免暗主题整页背景被误提亮。 */
+    isolation: isolate;
+  }
+
+  /* 暗主题 body 也不使用 linear-gradient，与亮主题统一为单色。
+     之前 .dark body 沿用 night-sky → night-indigo 渐变，长页面里产生双色断层。 */
+  .dark body {
+    background-color: var(--color-background);
+  }
+
+  /* 昼：麻布纤维；夜：星尘颗粒，两个世界不共用质感。
+     重要：必须用 absolute（跟随 body 高度滚动），不能用 fixed。
+     之前 fixed + z-index 100 会让长页面的下半截露底色、纸纹贴在视口顶部，
+     产生明显的双色断层；同时还可能压到 navbar。 */
+  body::after,
+  body::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  body::after {
+    opacity: 0.04;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='linen'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.045 .75' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='.15'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23linen)'/%3E%3C/svg%3E");
+    mix-blend-mode: multiply;
+  }
+
+  body::before {
+    opacity: 0;
+    background-image: radial-gradient(circle at 1px 1px, rgb(230 237 243 / 50%) 0.7px, transparent 0);
+    background-size: 38px 38px;
+  }
+
+  .dark body::after {
+    opacity: 0.06;
+    /* 暗底不用 screen（screen 会把整页背景提亮，正是暗主题双色断层的来源之一），
+       与亮主题一致用 multiply：暗色噪声叠在暗底上，只加颗粒质感，不改变整体明度。 */
+    mix-blend-mode: multiply;
+  }
+
+  .dark body::before {
+    opacity: 0.16;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-primary) 28%, transparent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    body,
+    body::before,
+    body::after {
+      animation: none !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* ===== 文章正文排版（prose-blog）：宋体长文，卷册留白 ===== */
+@layer components {
+  .prose-blog {
+    font-family: var(--font-serif);
+    font-size: 1.0625rem;
+    line-height: 1.9;
+    letter-spacing: 0.015em;
+    color: var(--color-foreground);
+    max-width: none; /* 明：正文撑满 flex-1，消除与目录间的空洞 */
+  }
+
+  /* 暗：栏宽收窄、正文柔一档、段距加大——夜读宜疏朗 */
+  .dark .prose-blog {
+    max-width: none;
+    line-height: 1.75;
+    letter-spacing: 0.05em;
+    font-weight: 400;
+    color: color-mix(in oklch, var(--color-foreground) 90%, var(--color-background));
+  }
+  .dark .prose-blog p { margin: 1.3rem 0; }
+  .dark .prose-blog h1,
+  .dark .prose-blog h2,
+  .dark .prose-blog h3,
+  .dark .prose-blog h4 {
+    font-weight: 600; /* 夜间标题降字重，不胀不燥 */
+  }
+  .dark .prose-blog > p:first-of-type::first-letter {
+    font-weight: 400;
+    color: var(--night-moon);
+    text-shadow: 0 0 30px rgb(230 237 243 / 45%);
+  }
+  .dark .prose-blog blockquote {
+    border-left-color: var(--night-glacier);
+    background: color-mix(in oklch, var(--night-glacier) 10%, transparent);
+  }
+
+  .dark .prose-blog h1,
+  .dark .prose-blog h2,
+  .dark .prose-blog h3,
+  .dark .prose-blog h4 {
+    text-shadow: 0 0 18px rgb(230 237 243 / 24%);
+    letter-spacing: 0.05em;
+  }
+  /* 卷首首字下沉：朱砂书法大字 */
+  .prose-blog > p:first-of-type::first-letter {
+    font-family: var(--font-calligraphy);
+    font-size: 3.1em;
+    line-height: 1;
+    float: left;
+    margin: 0.08em 0.14em 0 0;
+    color: var(--dawn-cinnabar);
+    text-shadow: 0 0 24px color-mix(in oklch, var(--dawn-cinnabar) 22%, transparent);
+  }
+  .prose-blog h1, .prose-blog h2, .prose-blog h3, .prose-blog h4 {
+    font-family: var(--font-serif);
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    line-height: 1.35;
+    scroll-margin-top: 6rem;
+  }
+  .prose-blog h1 { font-size: 2rem; margin: 2.6rem 0 1.2rem; }
+  /* 章节标题：左侧朱砂竖引 + 软底纹分隔（夜间用月光） */
+  .prose-blog h2 {
+    font-size: 1.5rem;
+    margin: 2.8rem 0 1.2rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid color-mix(in oklch, var(--color-border) 70%, transparent);
+    position: relative;
+    padding-left: 0.85rem;
+  }
+  .dark .prose-blog h2 {
+    border-bottom-color: color-mix(in oklch, var(--night-moon) 18%, transparent);
+  }
+  .prose-blog h2::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.18em;
+    bottom: 0.5rem;
+    width: 4px;
+    border-radius: 2px;
+    background: linear-gradient(to bottom, var(--color-primary), color-mix(in oklch, var(--color-primary) 30%, transparent));
+  }
+  .prose-blog h3 { font-size: 1.25rem; margin: 2rem 0 0.8rem; }
+  .prose-blog h4 { font-size: 1.1rem; margin: 1.6rem 0 0.6rem; }
+  .prose-blog p { margin: 1rem 0; }
+  .prose-blog a {
+    color: var(--color-primary);
+    text-decoration: none;
+    border-bottom: 1px solid color-mix(in oklch, var(--color-primary) 35%, transparent);
+    transition: border-color 0.2s;
+  }
+  .prose-blog a:hover { border-bottom-color: var(--color-primary); }
+  .prose-blog strong { font-weight: 700; }
+  .prose-blog ul, .prose-blog ol { margin: 0.9rem 0; padding-left: 1.6rem; }
+  .prose-blog ul { list-style: disc; }
+  .prose-blog ol { list-style: decimal; }
+  .prose-blog li { margin: 0.4rem 0; }
+  .prose-blog li > input[type="checkbox"] {
+    margin-right: 0.5rem;
+    accent-color: var(--color-primary);
+  }
+  .prose-blog blockquote {
+    margin: 1.2rem 0;
+    padding: 0.6rem 1.2rem;
+    border-left: 3px solid var(--color-primary);
+    background: color-mix(in oklch, var(--color-primary) 6%, transparent);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    color: var(--color-muted-foreground);
+  }
+  .prose-blog blockquote p { margin: 0.4rem 0; }
+  .prose-blog code {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    padding: 0.15em 0.4em;
+    border-radius: var(--radius-sm);
+    background: color-mix(in oklch, var(--color-foreground) 8%, transparent);
+  }
+  .prose-blog pre {
+    margin: 1.2rem 0;
+    padding: 1.1rem 1.3rem;
+    border-radius: var(--radius-lg);
+    background: oklch(0.16 0.005 260);
+    overflow-x: auto;
+    border: 1px solid var(--color-border);
+    position: relative;
+  }
+  .prose-blog pre code {
+    background: none;
+    padding: 0;
+    font-size: 0.875rem;
+    line-height: 1.7;
+    color: oklch(0.90 0.005 85);
+  }
+  .prose-blog table {
+    width: 100%;
+    margin: 1.2rem 0;
+    border-collapse: collapse;
+    font-size: 0.9375rem;
+  }
+  .prose-blog th, .prose-blog td {
+    padding: 0.6rem 0.9rem;
+    border: 1px solid var(--color-border);
+    text-align: left;
+  }
+  .prose-blog th {
+    background: color-mix(in oklch, var(--color-foreground) 5%, transparent);
+    font-weight: 600;
+  }
+  .prose-blog img {
+    max-width: 100%;
+    border-radius: var(--radius-lg);
+    margin: 1.2rem 0;
+  }
+  .prose-blog hr {
+    border: none;
+    border-top: 1px solid var(--color-border);
+    margin: 2rem 0;
+  }
+  .prose-blog .katex-display {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.5rem 0;
+  }
+}
+
+/* ===== 动效与国风装饰工具类 ===== */
+@layer utilities {
+  .hover-lift {
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+  }
+  .hover-lift:hover {
+    transform: translateY(-4px);
+  }
+  .story-link {
+    position: relative;
+  }
+  .story-link::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: -2px;
+    width: 100%;
+    height: 1px;
+    background: currentColor;
+    transform: scaleX(0);
+    transform-origin: bottom right;
+    transition: transform 0.3s ease;
+  }
+  .story-link:hover::after {
+    transform: scaleX(1);
+    transform-origin: bottom left;
+  }
+
+  /* 朱砂印章：方形朱底白文，略不规则边角模拟钤印 */
+  .seal {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--dawn-cinnabar);
+    color: var(--dawn-sunpaper);
+    font-family: var(--font-serif);
+    font-weight: 700;
+    line-height: 1;
+    border-radius: 4px 3px 5px 3px;
+    box-shadow:
+      inset 0 0 0 1.5px color-mix(in oklch, var(--dawn-sunpaper) 55%, transparent),
+      0 1px 3px color-mix(in oklch, var(--dawn-cinnabar) 35%, transparent);
+    user-select: none;
+    transition: transform 220ms ease, box-shadow 220ms ease, filter 220ms ease;
+  }
+  .seal:hover {
+    transform: translateY(-1px);
+    filter: drop-shadow(0 6px 18px color-mix(in oklch, var(--dawn-cinnabar) 30%, transparent));
+  }
+  /* 竖排书法文字 */
+  .vertical-text {
+    writing-mode: vertical-rl;
+    letter-spacing: 0.35em;
+    font-family: var(--font-serif);
+  }
+  /* 发丝分隔线：两端渐隐的极细线 */
+  .hairline {
+    height: 3px;
+    border: none;
+    background: linear-gradient(90deg, transparent, var(--dawn-ochre) 12%, var(--dawn-ochre) 50%, var(--dawn-ochre) 88%, transparent);
+    clip-path: polygon(0 50%, 8% 42%, 16% 56%, 25% 34%, 34% 54%, 44% 40%, 54% 58%, 64% 35%, 74% 52%, 84% 40%, 92% 54%, 100% 50%, 100% 68%, 92% 70%, 84% 62%, 74% 74%, 64% 64%, 54% 76%, 44% 62%, 34% 72%, 25% 56%, 16% 78%, 8% 62%, 0 68%);
+  }
+
+  .dark .hairline {
+    height: 1px;
+    background: repeating-linear-gradient(90deg, transparent 0 8px, rgb(230 237 243 / 58%) 8px 12px, transparent 12px 20px);
+    filter: drop-shadow(0 0 5px rgb(230 237 243 / 55%));
+    clip-path: none;
+  }
+  .dark .hairline-y {
+    background: repeating-linear-gradient(180deg, transparent 0 8px, rgb(230 237 243 / 58%) 8px 12px, transparent 12px 20px);
+    filter: drop-shadow(0 0 5px rgb(230 237 243 / 55%));
+  }
+  /* 竖向发丝线 */
+  .hairline-y {
+    width: 1px;
+    border: none;
+    background: linear-gradient(
+      to bottom,
+      transparent,
+      var(--color-border) 20%,
+      var(--color-border) 80%,
+      transparent
+    );
+  }
+  /* 回纹饰带：mask 实现，随 currentColor 变色 */
+  .huawen {
+    height: 16px;
+    background: currentColor;
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M4 20V6a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H9a1.6 1.6 0 01-1.6-1.6V10h6v4h-3' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M4 20V6a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H9a1.6 1.6 0 01-1.6-1.6V10h6v4h-3' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round'/%3E%3C/svg%3E");
+    -webkit-mask-repeat: repeat-x;
+    mask-repeat: repeat-x;
+    -webkit-mask-position: left center;
+    mask-position: left center;
+    -webkit-mask-size: 20px 20px;
+    mask-size: 20px 20px;
+  }
+  /* 水墨晕染块：不规则边缘的淡墨团 */
+  .ink-blot {
+    border-radius: 46% 54% 52% 48% / 55% 48% 52% 45%;
+    background: radial-gradient(
+      closest-side,
+      color-mix(in oklch, var(--color-ink-2) 15%, transparent),
+      color-mix(in oklch, var(--color-ink-3) 8%, transparent) 55%,
+      transparent 76%
+    );
+  }
+  /* 纸纹颗粒（局部覆盖用，配合 opacity） */
+  .paper-grain {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  .dark .paper-grain {
+    background-image: radial-gradient(circle at 1px 1px, rgb(230 237 243 / 44%) 0.7px, transparent 0);
+    background-size: 22px 22px;
+    filter: drop-shadow(0 0 5px rgb(143 208 204 / 35%));
+  }
+  /* 科技感点阵 */
+  .dot-grid {
+    background-image: radial-gradient(circle at 1px 1px, currentColor 1px, transparent 0);
+    background-size: 32px 32px;
+  }
+
+  .dark .dot-grid {
+    background-image: radial-gradient(circle at 1px 1px, var(--night-moon) 1px, transparent 0);
+    filter: drop-shadow(0 0 6px rgb(230 237 243 / 45%));
+  }
+
+  .dawn-only { display: block; }
+  .night-only,
+  .night-copy,
+  .night-stats-row,
+  .night-identity,
+  .night-scenery,
+  .night-hero-veil,
+  .night-dash { display: none; }
+  .dark .dawn-only,
+  .dark .dawn-copy,
+  .dark .dawn-stats,
+  .dark .dawn-identity,
+  .dark .dawn-scenery,
+  .dark .dawn-hero-veil { display: none; }
+  .dark .night-only,
+  .dark .night-copy,
+  .dark .night-stats-row,
+  .dark .night-identity,
+  .dark .night-scenery,
+  .dark .night-hero-veil { display: block; }
+
+  /* Hero 静态天体：动画期间隐藏，让 overlay 天体接管 */
+  .hero-celestial {
+    transition: opacity 400ms ease;
+  }
+  .theme-transitioning .hero-celestial {
+    opacity: 0 !important;
+  }
+
+  .home-hero {
+    /* 亮暗统一高度：100vh/100svh，告别 min-height 720px 让亮主题显得「短一块」。
+       svh 解决移动浏览器地址栏导致的 vh 跳动。 */
+    min-height: 100vh;
+    min-height: 100svh;
+    /* hero 末尾 80px 渐隐到背景色，消除山水图与下方「最新文章」section 之间的硬切白条 */
+    -webkit-mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 80px), transparent 100%);
+    mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 80px), transparent 100%);
+  }
+  .dark .home-hero { min-height: 100vh; min-height: 100svh; }
+  .dawn-hero-veil {
+    background: linear-gradient(180deg, rgb(246 248 245 / 0.16), transparent 48%, rgb(143 194 223 / 0.1));
+  }
+  /* 暗主题 hero veil:只在顶部压一点点夜色,底部保持透明,
+     让图片自身的深色水面自然过渡到下方内容区,不额外制造纯色块 */
+  .night-hero-veil {
+    background: linear-gradient(180deg, rgb(12 20 33 / 0.10) 0%, transparent 38%, transparent 100%);
+  }
+  .dark .dawn-stats { display: none; }
+  .dark .night-stats-row { display: grid; }
+  .dark .dawn-hero-veil { display: none; }
+  .dark .night-hero-veil { display: block; }
+  .night-dash {
+    border-top: 1px dashed rgb(230 237 243 / 0.6);
+    filter: drop-shadow(0 0 4px rgb(230 237 243 / 0.45));
+  }
+
+  .posts-page,
+  .post-detail { isolation: isolate; }
+  .posts-scenery,
+  .post-scenery {
+    z-index: -1;
+    /* 底部渐隐：上半保持，下半自然融入底色，消除硬切边色差 */
+    mask-image: linear-gradient(to bottom, black 0%, black 50%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 0%, black 50%, transparent 100%);
+  }
+  .post-night-orbit {
+    border: 1px solid rgb(230 237 243 / 0.18);
+    border-radius: 50%;
+    box-shadow: 0 0 0 24px rgb(143 208 204 / 0.06), 0 0 34px rgb(230 237 243 / 0.16);
+  }
+  .post-night-orbit::after {
+    content: "";
+    position: absolute;
+    inset: 20%;
+    border-radius: 50%;
+    background: var(--night-moon);
+    box-shadow: inset -15px 0 0 var(--night-sky), 0 0 28px rgb(230 237 243 / 0.3);
+  }
+  .night-constellation {
+    opacity: 0.72;
+    background:
+      radial-gradient(circle at 8% 28%, var(--night-moon) 0 2px, transparent 3px),
+      radial-gradient(circle at 42% 58%, var(--night-bronze) 0 2px, transparent 3px),
+      radial-gradient(circle at 75% 18%, var(--night-moon) 0 1.5px, transparent 2.5px),
+      linear-gradient(28deg, transparent 49.6%, rgb(230 237 243 / 0.35) 50%, transparent 50.5%) 8% 28% / 34% 32% no-repeat,
+      linear-gradient(-20deg, transparent 49.6%, rgb(143 208 204 / 0.35) 50%, transparent 50.5%) 42% 58% / 38% 40% no-repeat;
+    filter: drop-shadow(0 0 7px rgb(230 237 243 / 0.32));
+  }
+
+  .theme-icon-sun,
+  .theme-icon-moon {
+    display: grid;
+    place-items: center;
+    transition: transform 520ms cubic-bezier(0.16, 1, 0.3, 1), opacity 360ms ease, filter 360ms ease;
+  }
+
+  .theme-icon-sun { position: absolute; opacity: 1; transform: rotate(0deg) scale(1); color: var(--dawn-cinnabar); }
+  .theme-icon-moon { position: absolute; opacity: 0; transform: rotate(-70deg) scale(0.45); color: var(--night-moon); filter: drop-shadow(0 0 5px rgb(230 237 243 / 45%)); }
+  .dark .theme-icon-sun { opacity: 0; transform: rotate(70deg) scale(0.45); }
+  .dark .theme-icon-moon { opacity: 1; transform: rotate(0deg) scale(1); }
+
+  .theme-scenery .dawn-scenery { opacity: 1; transition: opacity 700ms ease; }
+  .theme-scenery .night-scenery { opacity: 0; transition: opacity 700ms ease; }
+  .dark .theme-scenery .dawn-scenery { opacity: 0; }
+  .dark .theme-scenery .night-scenery { opacity: 1; }
+
+  .dark .seal {
+    background: var(--night-bronze);
+    color: var(--night-sky);
+    box-shadow: inset 0 0 0 1px rgb(230 237 243 / 55%), 0 0 16px rgb(143 208 204 / 22%);
+  }
+
+  .dark .card-glow,
+  .dark [class*="bg-card"] {
+    box-shadow: inset 0 0 0 1px rgb(230 237 243 / 8%), inset 0 0 32px rgb(143 208 204 / 5%);
+    background-color: color-mix(in oklch, var(--card) 88%, transparent);
+  }
+  /* theme-article-card 的 hover 统一在下方「文章卡片」段定义，避免新旧两套叠加 */
+  .dark .post-detail .prose-blog,
+  .dark .post-detail .backlinks {
+    position: relative;
+  }
+  .dark .post-detail .huawen { display: none; }
+  .dark .post-detail .night-copy { display: flex; }
+  .dark .post-detail .post-scenery { opacity: 0.24; }
+  .dark .posts-page .night-copy { display: flex; }
+  .dark .posts-page .posts-scenery { opacity: 0.30; }
+  @media (max-width: 767px) {
+    .home-hero,
+    .dark .home-hero { min-height: 650px; }
+    .theme-scenery { opacity: 0.52 !important; }
+    .dark .post-detail .prose-blog { padding-left: 1rem; }
+    /* 移动端：阅读进度指示器收窄，避免遮挡内容 */
+    .scroll-progress { width: 10px; }
+    .scroll-progress .dawn-only svg { width: 10px; }
+  }
+}
+
+@keyframes night-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(18px, 12px, 0); }
+}
+
+/* highlight.js 主题适配 */
+.hljs {
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+/* 首页动画 */
+@keyframes gradient-pan {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+@keyframes ink-drift {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(-3%, 2%) scale(1.06); }
+}
+.animate-float-slow {
+  animation: float-slow 6s ease-in-out infinite;
+}
+.animate-ink-drift {
+  animation: ink-drift 16s ease-in-out infinite alternate;
+}
+
+/* ============================================================
+   意象级增强 · 朝曦(太阳·山岳·春日) / 夜隐(月亮·江河·冬日)
+   母题装饰 · 交互语言 · 卡片光影 · 首页双结构
+   ============================================================ */
+@layer utilities {
+  /* —— 点缀色：明=晨曦金/新芽绿/桃粉，暗=霜蓝 —— */
+  .dawn-gold { color: var(--dawn-gold); }
+  .dawn-sprout { color: var(--dawn-sprout); }
+  .dawn-peach { color: var(--dawn-peach); }
+  .night-frost { color: var(--night-frost); }
+
+  /* —— 明：日晕呼吸 —— */
+  .dawn-sunhalo {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: sun-halo 9s ease-in-out infinite;
+  }
+  @keyframes sun-halo {
+    0%, 100% { opacity: 0.55; transform: scale(1); }
+    50% { opacity: 0.95; transform: scale(1.07); }
+  }
+  /* —— 明：光芒脉动 —— */
+  .dawn-ray {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: ray-pulse 5s ease-in-out infinite;
+  }
+  @keyframes ray-pulse {
+    0%, 100% { opacity: 0.32; }
+    50% { opacity: 0.82; }
+  }
+  /* —— 明：云纹漂移 —— */
+  .dawn-cloud {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: cloud-drift 32s ease-in-out infinite;
+  }
+  .dawn-cloud--slow { animation-duration: 46s; }
+  @keyframes cloud-drift {
+    0% { transform: translateX(-4%); }
+    50% { transform: translateX(5%); }
+    100% { transform: translateX(-4%); }
+  }
+  /* —— 明：柳丝轻摆 —— */
+  .dawn-willow {
+    transform-box: fill-box;
+    transform-origin: top center;
+    animation: willow-sway 7s ease-in-out infinite;
+  }
+  @keyframes willow-sway {
+    0%, 100% { transform: rotate(-1.6deg); }
+    50% { transform: rotate(1.6deg); }
+  }
+  /* —— 暗：月轮辉光 —— */
+  .night-moonglow {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: moon-glow 11s ease-in-out infinite;
+  }
+  @keyframes moon-glow {
+    0%, 100% { opacity: 0.62; }
+    50% { opacity: 1; }
+  }
+  /* —— 暗：落雪 —— */
+  .night-snow {
+    animation-name: snow-fall;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+  }
+  @keyframes snow-fall {
+    0% { transform: translateY(-14px) translateX(0); opacity: 0; }
+    12% { opacity: 0.85; }
+    88% { opacity: 0.85; }
+    100% { transform: translateY(130px) translateX(16px); opacity: 0; }
+  }
+  /* —— 暗：涟漪 —— */
+  .night-ripple {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: ripple-breathe 6s ease-out infinite;
+  }
+  @keyframes ripple-breathe {
+    0% { transform: scale(0.55); opacity: 0.7; }
+    100% { transform: scale(1.7); opacity: 0; }
+  }
+  /* —— 暗：霜花微闪 —— */
+  .night-frost-flower {
+    animation: frost-shimmer 5s ease-in-out infinite;
+  }
+  @keyframes frost-shimmer {
+    0%, 100% { opacity: 0.32; }
+    50% { opacity: 0.85; }
+  }
+
+  /* —— 交互语言：明快光扩 vs 沉稳涟漪/墨染 —— */
+  .fx-light {
+    transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 340ms ease, background 340ms ease;
+  }
+  .fx-light:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 20px 46px -20px rgb(43 124 166 / 40%), 0 0 0 1px rgb(43 124 166 / 20%);
+  }
+  .fx-ripple {
+    position: relative;
+    transition: transform 460ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 460ms ease;
+  }
+  .fx-ripple::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border: 1px solid rgb(230 237 243 / 0%);
+    transition: border-color 360ms ease;
+    pointer-events: none;
+  }
+  .fx-ripple:hover {
+    transform: translateY(-2px);
+  }
+  .fx-ripple:hover::after {
+    border-color: rgb(230 237 243 / 42%);
+    animation: ripple-out 900ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  @keyframes ripple-out {
+    0% { transform: scale(1); border-color: rgb(230 237 243 / 50%); }
+    100% { transform: scale(1.14); border-color: rgb(230 237 243 / 0); }
+  }
+  .fx-ink {
+    transition: background 460ms ease, box-shadow 460ms ease;
+  }
+  .fx-ink:hover {
+    background: radial-gradient(130% 130% at 50% 120%, rgb(143 208 204 / 0.22), transparent 68%);
+  }
+
+  /* —— 文章卡片：明=日光云隙渐变 / 暗=水墨倒影 —— */
+  .theme-article-card {
+    position: relative;
+    border-radius: 1.25rem;            /* 20px 圆角：水墨柔和，不用直角 */
+    background-image: radial-gradient(120% 90% at 80% -12%, rgb(143 194 223 / 0.12), transparent 60%);
+    box-shadow: 0 6px 22px -16px rgb(43 124 166 / 22%), 0 1px 0 0 rgb(143 194 223 / 8%) inset;
+    transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 340ms ease, background 340ms ease;
+  }
+  .theme-article-card:hover {
+    transform: translateY(-3px);
+    background-image: radial-gradient(120% 95% at 78% -10%, rgb(143 194 223 / 0.22), transparent 62%);
+    box-shadow: 0 18px 40px -22px rgb(43 124 166 / 40%), 0 0 0 1px rgb(43 124 166 / 20%);
+  }
+  .dark .theme-article-card {
+    background-image: linear-gradient(180deg, rgb(22 34 47 / 0.42), rgb(12 20 33 / 0.08));
+  }
+  .dark .theme-article-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border: 1px solid rgb(230 237 243 / 0%);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 360ms ease;
+  }
+  .dark .theme-article-card:hover {
+    transform: translateX(-2px);
+    background-image: linear-gradient(180deg, rgb(36 64 92 / 0.55), rgb(12 20 33 / 0.05));
+    box-shadow: 0 0 0 1px rgb(230 237 243 / 16%);
+  }
+  .dark .theme-article-card:hover::after {
+    border-color: rgb(230 237 243 / 42%);
+    animation: ripple-out 900ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /* —— 明：登山步道(上升网格) / 暗：江河流淌(下沉流线) —— */
+  .dawn-trail-step {
+    transition: transform 420ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 420ms ease, background 420ms ease;
+  }
+  .dawn-trail-step:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 24px 48px -22px rgb(143 194 223 / 45%);
+  }
+  .night-flow-line {
+    width: 1px;
+    background: linear-gradient(180deg, transparent, rgb(230 237 243 / 55%) 12%, rgb(230 237 243 / 55%) 88%, transparent);
+  }
+  .night-flow-node {
+    box-shadow: 0 0 0 4px rgb(12 20 33 / 60%), 0 0 14px rgb(230 237 243 / 60%);
+  }
+
+  /* —— 主题切换：太阳东升西落 → 月亮升起（双天体弧线穿越） —— */
+  .theme-transition-sky {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    pointer-events: none;
+    overflow: hidden;
+    visibility: hidden;
+  }
+  .theme-transitioning .theme-transition-sky {
+    visibility: visible;
+  }
+  .theme-transition-sun,
+  .theme-transition-moon {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 160px;
+    height: 160px;
+    margin: -80px 0 0 -80px;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    opacity: 0;
+    /* offset-path 由 theme-toggle.tsx 按视口尺寸注入像素路径（path() 不支持百分比坐标） */
+    offset-rotate: 0deg;
+    offset-anchor: 50% 50%;
+    will-change: offset-distance, opacity;
+  }
+  /* 浏览器不支持 offset-path 时隐藏天体，只留帷幕渐变过渡 */
+  .theme-transition-sky.celestial-off .theme-transition-sun,
+  .theme-transition-sky.celestial-off .theme-transition-moon {
+    display: none;
+  }
+
+  /* 暮光/晨曦帷幕：中点达到峰值，遮盖两套首页结构的 display 切换 */
+  .theme-transition-veil {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+  }
+  .theme-transition-sky.sunset .theme-transition-veil {
+    background:
+      radial-gradient(120% 90% at 50% 108%, rgb(43 33 58 / 0.92), rgb(11 14 20 / 0.78) 58%, rgb(11 14 20 / 0.6)),
+      linear-gradient(180deg, rgb(90 122 140 / 0.18), transparent 42%);
+    animation: veil-peak 2200ms cubic-bezier(0.45, 0, 0.55, 1) forwards;
+  }
+  .theme-transition-sky.sunrise .theme-transition-veil {
+    background:
+      radial-gradient(120% 90% at 50% -8%, rgb(252 246 232 / 0.95), rgb(245 240 232 / 0.82) 55%, rgb(237 189 87 / 0.42)),
+      linear-gradient(0deg, rgb(168 195 162 / 0.22), transparent 46%);
+    animation: veil-peak 2200ms cubic-bezier(0.45, 0, 0.55, 1) forwards;
+  }
+  @keyframes veil-peak {
+    0% { opacity: 0; }
+    18% { opacity: 0.55; }
+    50% { opacity: 1; }
+    82% { opacity: 0.55; }
+    100% { opacity: 0; }
+  }
+
+  /* 地平线霞光带：日落时底部橙红余晖 / 日出时底部金橙曙光，随帷幕同呼吸 */
+  .theme-transition-horizon {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 34vh;
+    opacity: 0;
+    background: linear-gradient(0deg, rgb(237 148 87 / 0.5), rgb(237 189 87 / 0.22) 45%, transparent);
+    filter: blur(2px);
+  }
+  .theme-transition-sky.sunset .theme-transition-horizon {
+    animation: horizon-breathe 2200ms cubic-bezier(0.45, 0, 0.55, 1) forwards;
+  }
+  .theme-transition-sky.sunrise .theme-transition-horizon {
+    background: linear-gradient(0deg, rgb(247 207 115 / 0.55), rgb(255 248 217 / 0.25) 45%, transparent);
+    animation: horizon-breathe 2200ms cubic-bezier(0.45, 0, 0.55, 1) forwards;
+  }
+  @keyframes horizon-breathe {
+    0% { opacity: 0; transform: translateY(6vh); }
+    50% { opacity: 1; transform: translateY(0); }
+    100% { opacity: 0; transform: translateY(-4vh); }
+  }
+  .theme-transition-sun {
+    background-image: url("/assets/theme/sun.png");
+    filter: drop-shadow(0 0 26px rgb(237 189 87 / 0.5));
+  }
+  .theme-transition-moon {
+    background-image: url("/assets/theme/moon.png");
+    filter: drop-shadow(0 0 26px rgb(230 237 243 / 0.45));
+  }
+
+  /* 落日（明→暗）：太阳在 0-50% 沿弧线落下，月亮在 50-100% 从下方升回左上角 */
+  .theme-transition-sky.sunset .theme-transition-sun {
+    animation: celestial-set 2200ms cubic-bezier(0.45, 0, 0.55, 1) forwards;
+  }
+  .theme-transition-sky.sunset .theme-transition-moon {
+    animation: celestial-rise 2200ms cubic-bezier(0.45, 0, 0.55, 1) forwards;
+  }
+  /* 月落日出（暗→明）：月亮在 0-50% 落下，太阳在 50-100% 升起 */
+  .theme-transition-sky.sunrise .theme-transition-moon {
+    animation: celestial-set 2200ms cubic-bezier(0.45, 0, 0.55, 1) forwards;
+  }
+  .theme-transition-sky.sunrise .theme-transition-sun {
+    animation: celestial-rise 2200ms cubic-bezier(0.45, 0, 0.55, 1) forwards;
+  }
+
+  /* 落下：从 home 沿弧线落到右下（offset-distance 0%→100%，前 50% 走完） */
+  @keyframes celestial-set {
+    0% { offset-distance: 0%; opacity: 0; }
+    8% { opacity: 1; }
+    44% { opacity: 1; }
+    50% { offset-distance: 100%; opacity: 0; }
+    100% { offset-distance: 100%; opacity: 0; }
+  }
+  /* 升起：从左下沿弧线升到 home（offset-distance 0%→100%，后 50% 走完） */
+  @keyframes celestial-rise {
+    0% { offset-distance: 0%; opacity: 0; }
+    50% { offset-distance: 0%; opacity: 0; }
+    58% { opacity: 1; }
+    94% { opacity: 1; }
+    100% { offset-distance: 100%; opacity: 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dawn-sunhalo, .dawn-ray, .dawn-cloud, .dawn-willow,
+    .night-moonglow, .night-snow, .night-ripple, .night-frost-flower,
+    .theme-transition-sun, .theme-transition-moon, .theme-transition-veil,
+    .theme-transition-horizon {
+      animation: none !important;
+    }
+  }
+}
+
+/* ============================================================
+   P1 · 交互语言全站化：明=明快弹性 / 暗=沉稳涟漪
+   令牌：--fx-dur / --fx-ease（:root 与 .dark 分叉）
+   ============================================================ */
+@layer utilities {
+  /* —— 全局焦点环：明朱砂 / 暗月白（--ring 已分主题） —— */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* —— 按压反馈：明=轻快回弹 / 暗=沉稳轻沉 —— */
+  .fx-light:active { transform: translateY(-2px) scale(0.97); transition-duration: 120ms; }
+  .fx-ripple:active { transform: scale(0.985); transition-duration: 160ms; }
+
+  /* —— 导航链接：暗色激活态带霜蓝微光 —— */
+  .nav-link {
+    transition: color var(--fx-dur) var(--fx-ease), background-color var(--fx-dur) var(--fx-ease), box-shadow var(--fx-dur) ease;
+  }
+  .dark .nav-link-active {
+    background: rgb(143 208 204 / 0.10) !important;
+    box-shadow: inset 0 0 0 1px rgb(230 237 243 / 0.16), 0 0 18px rgb(143 208 204 / 0.10);
+  }
+
+  /* —— 标签云/筛选胶囊：明=钤印上抬 / 暗=轻触浮起 + 霜光 —— */
+  .tag-pill {
+    transition: transform var(--fx-dur) var(--fx-ease), background-color var(--fx-dur) ease,
+      border-color var(--fx-dur) ease, color var(--fx-dur) ease, box-shadow var(--fx-dur) ease;
+  }
+  .tag-pill:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 22px -10px rgb(51 145 108 / 45%);
+  }
+  .tag-pill:active { transform: translateY(-1px) scale(0.97); }
+  .dark .tag-pill:hover {
+    transform: translateY(-2px);
+    background: rgb(143 208 204 / 0.12);
+    border-color: rgb(230 237 243 / 0.5);
+    color: var(--night-moon);
+    box-shadow: 0 0 16px rgb(230 237 243 / 0.16);
+  }
+
+  /* —— 文章列表筛选胶囊（button 版，无 border） —— */
+  .filter-pill {
+    transition: transform var(--fx-dur) var(--fx-ease), background-color var(--fx-dur) ease,
+      color var(--fx-dur) ease, box-shadow var(--fx-dur) ease;
+  }
+  .filter-pill:hover { transform: translateY(-2px); }
+  .filter-pill:active { transform: scale(0.96); }
+  .dark .filter-pill:not(.filter-pill--active):hover {
+    background: rgb(143 208 204 / 0.10);
+    box-shadow: 0 0 14px rgb(230 237 243 / 0.12);
+  }
+
+  /* —— TOC：暗色激活项带月光辉 —— */
+  .toc-link {
+    transition: color var(--fx-dur) var(--fx-ease), border-color var(--fx-dur) ease, text-shadow var(--fx-dur) ease;
+  }
+  .dark .toc-link-active {
+    text-shadow: 0 0 14px rgb(230 237 243 / 45%);
+  }
+
+  /* —— 搜索面板：明=弹入 / 暗=沉入；暗色面板带月辉描边 —— */
+  .search-panel {
+    animation: search-in-dawn 280ms var(--fx-ease);
+  }
+  @keyframes search-in-dawn {
+    from { opacity: 0; transform: translateY(-16px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .dark .search-panel {
+    animation: search-in-night 440ms cubic-bezier(0.22, 1, 0.36, 1);
+    box-shadow: 0 0 0 1px rgb(230 237 243 / 0.12), 0 32px 80px -20px rgb(0 0 0 / 0.7), 0 0 64px rgb(143 208 204 / 0.16);
+  }
+  @keyframes search-in-night {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .search-result {
+    transition: background-color var(--fx-dur) var(--fx-ease);
+  }
+  .dark .search-result:hover {
+    background: linear-gradient(90deg, rgb(143 208 204 / 0.16), transparent 85%);
+  }
+
+  /* —— 搜索/筛选输入框：聚焦光色分主题 —— */
+  .input-themed { transition: background-color var(--fx-dur) ease, box-shadow var(--fx-dur) ease; }
+  .input-themed:focus {
+    background: color-mix(in oklch, var(--color-card) 85%, transparent);
+    box-shadow: 0 0 0 1px var(--color-primary), 0 0 12px color-mix(in oklch, var(--color-primary) 18%, transparent);
+  }
+
+  /* —— 暗色入场：自上而下沉入（与明色 translateY(24px) 上升相反），更慢更缓 —— */
+  html.reveal-ready.dark :is(.reveal, .reveal-up, .animate-on-scroll, [data-reveal]:not([class*="reveal-"])) {
+    transform: translateY(-16px);
+    transition: opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1), transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+    transition-delay: var(--reveal-delay, 0ms);
+  }
+  html.reveal-ready.dark :is(.reveal, .reveal-up, .animate-on-scroll, [data-reveal]).visible {
+    transform: none;
+  }
+
+  /* —— 链接下划线（story-link）：暗色放缓 + 月光 —— */
+  .dark .story-link::after {
+    transition-duration: 500ms;
+    box-shadow: 0 0 8px rgb(230 237 243 / 55%);
+  }
+}
