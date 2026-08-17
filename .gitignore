@@ -145,9 +145,14 @@ tools/_archived/
 deploy/blog.tar.gz
 deploy/blog.b64
 deploy/node22.tar.xz
+deploy/repo.tar.gz
 deploy/workbench.tar.gz
 deploy/jiangnan-blog.tar.gz
 deploy/jiangnan-blog.b64
 dist.tar.gz
 *.tar.gz
 *.tar.xz
+
+# 旧版/废弃目录
+.backup/
+*.bak
