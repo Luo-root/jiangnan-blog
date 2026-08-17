@@ -45,7 +45,6 @@ function PostDetail() {
 
       <div className="reveal relative" data-reveal-delay="50">
         <div className="ink-blot dawn-only pointer-events-none absolute -left-28 -top-24 h-80 w-80" />
-        <div className="post-night-orbit night-only pointer-events-none absolute right-0 top-0 h-64 w-64" />
         <div className="dawn-only mb-5 flex items-center gap-3 font-mono text-[10px] tracking-[0.3em] text-ink-4"><img src="/assets/theme/sun.png" alt="" className="h-4 w-auto" /><span>SPRING NOTE / SUNLIT EDITION</span></div>
         <div className="night-copy mb-5 flex items-center gap-3 font-mono text-[10px] tracking-[0.3em] text-ink-4"><img src="/assets/theme/moon.png" alt="" className="h-4 w-auto" /><span>WINTER NOTE / MOONLIT EDITION</span></div>
         {post.cover && (

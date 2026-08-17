@@ -138,6 +138,7 @@ public/assets/parallax/
 tools/_temp_*.py
 tools/_patch_slug.py
 tools/_crop_celestial.py
+tools/_rm_*.py
 tools/green_key.py
 tools/debug-hero.*
 tools/verify_links.cjs

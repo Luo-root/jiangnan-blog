@@ -635,19 +635,6 @@ html, body {
     mask-image: linear-gradient(to bottom, black 0%, black 50%, transparent 100%);
     -webkit-mask-image: linear-gradient(to bottom, black 0%, black 50%, transparent 100%);
   }
-  .post-night-orbit {
-    border: 1px solid rgb(230 237 243 / 0.18);
-    border-radius: 50%;
-    box-shadow: 0 0 0 24px rgb(143 208 204 / 0.06), 0 0 34px rgb(230 237 243 / 0.16);
-  }
-  .post-night-orbit::after {
-    content: "";
-    position: absolute;
-    inset: 20%;
-    border-radius: 50%;
-    background: var(--night-moon);
-    box-shadow: inset -15px 0 0 var(--night-sky), 0 0 28px rgb(230 237 243 / 0.3);
-  }
   .night-constellation {
     opacity: 0.72;
     background:
