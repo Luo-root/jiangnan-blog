@@ -19,12 +19,23 @@ mkdir -p "$NEW"
 tar -xzf $APP/repo.tar.gz -C "$NEW"
 
 echo "[3/5] 复用 node_modules（从最近的 repo.old.* 软链）"
+# 注意：之前用 symlink 复用 node_modules 会在清理旧 backup 时链断裂
+# 这里 fallback 到 npm install（首次或链断时），后续保留 fast path
 PREV=$(ls -dt $APP/repo.old.* 2>/dev/null | head -1 || true)
+LINKED=0
 if [ -n "$PREV" ] && [ -d "$PREV/node_modules" ]; then
-    ln -s "$PREV/node_modules" "$NEW/node_modules"
-    echo "    linked node_modules from $PREV"
-else
-    echo "    [warn] no previous node_modules found, will run npm ci"
+    # 解析到最终 target（symlink 链），验证是真实目录
+    TARGET=$(readlink -f "$PREV/node_modules" 2>/dev/null || true)
+    if [ -n "$TARGET" ] && [ -d "$TARGET" ]; then
+        ln -s "$TARGET" "$NEW/node_modules"
+        echo "    linked node_modules from $PREV -> $TARGET"
+        LINKED=1
+    fi
+fi
+if [ "$LINKED" -eq 0 ]; then
+    echo "    [warn] no valid previous node_modules; running npm install (约 30-40s)"
+    cd "$NEW"
+    npm install --registry=https://registry.npmmirror.com --no-audit --no-fund 2>&1 | tail -3
 fi
 
 echo "[4/5] build（VAULT_ROOT=/home/studio/workbench）"
