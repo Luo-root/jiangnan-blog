@@ -6,7 +6,7 @@
 #
 #  前置：
 #    1. 域名 A 记录已指 VPS 公网 IP
-#    2. 本地已 `ssh-copy-id -i studio.pem ubuntu@<VPS_IP>`
+#    2. 本地已 `ssh-copy-id -i <key>.pem ubuntu@<VPS_IP>`
 #    3. 已从 GitHub 拉取本仓库（手动或 clone）
 # ============================================================
 

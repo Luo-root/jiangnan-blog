@@ -1,6 +1,6 @@
 # 部署脚本说明
 
-本目录的脚本用于把**前端代码**推送到 VPS（`ubuntu@49.232.38.216`）。
+本目录的脚本用于把**前端代码**推送到 VPS（IP 走环境变量 `$env:BLOG_VPS`，**不要硬编码**）。
 
 **博客内容（Obsidian）走另一条链路**，由 `D:\Data\工作台\sync.ps1` 推到 VPS bare repo，详见 `D:\Data\工作台\README.md` 和 `D:\Data\工作台\部署溯源\jiangnan-blog.md`。
 
@@ -27,7 +27,7 @@ git push origin main
 `pull.ps1` 做了什么：
 
 1. `tar` 打包当前目录（排除 `node_modules` / `dist` / `.git` / `.backup`），产物 `deploy/repo.tar.gz`
-2. `scp deploy/repo.tar.gz ubuntu@49.232.38.216:/home/studio/app/repo.tar.gz`
+2. `scp deploy/repo.tar.gz $BLOG_VPS:/home/studio/app/repo.tar.gz`
 3. `ssh ... "bash /home/studio/app/deploy-code.sh"`：
    - 把当前 `repo/` 改名为 `repo.old.<ts>` 备份
    - 解压 `repo.tar.gz` 到 `repo/`
@@ -36,7 +36,7 @@ git push origin main
    - `rsync -a --delete repo/dist/ /home/studio/app/public/`
    - 清理超过 2 个的 `repo.old.*` 备份
 
-完成后访问 `http://49.232.38.216/` 验证（备案通过后改用域名）。
+完成后访问 VPS 临时 IP 验证（备案通过后改用域名）。
 
 ## VPS 端关键路径
 
@@ -68,7 +68,7 @@ git push origin main
 
 | 现象 | 排查 |
 |---|---|
-| `pull.ps1` 报 `scp failed` | 检查私钥 `C:/Users/LUOYN/.ssh/studio.pem` 是否存在；VPS 安全组是否放行 22 |
+| `pull.ps1` 报 `scp failed` | 检查 `$env:BLOG_SSH_KEY` 指向的私钥是否存在；VPS 安全组是否放行 22 |
 | 部署后页面没更新 | `ssh ubuntu@... "tail -30 /home/studio/app/deploy.log"` 看 build 日志；检查 `rsync` 后 `/home/studio/app/public/index.html` mtime |
 | `node_modules` 软链失效 | VPS 上 `ls -la /home/studio/app/repo/node_modules`；手动 `npm ci` 重装 |
 | 想强制全新 build | `rm /home/studio/app/repo/node_modules` 后再跑 `pull.ps1`（会触发 VPS `npm install` 兜底） |

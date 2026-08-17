@@ -2,7 +2,11 @@
 #  Frontend code -> VPS one-click deploy
 #
 #  Usage (PowerShell, from project root):
+#      $env:BLOG_VPS = "ubuntu@<VPS_IP>"
+#      $env:BLOG_SSH_KEY = "C:/path/to/key.pem"
 #      .\deploy\pull.ps1
+#
+#  Or set in your PowerShell profile so you don't repeat it.
 #
 #  What it does (pure linear, no defensive checks):
 #      1. tar the project (excluding node_modules / dist / .git)
@@ -11,15 +15,19 @@
 #
 #  Prereqs (already done once):
 #      - VPS has deploy-code.sh at /home/studio/app/
-#      - Local ssh key at C:/Users/LUOYN/.ssh/studio.pem
+#      - Local ssh key configured
 # ============================================================
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $ProjectRoot
 
-$Vps = "ubuntu@49.232.38.216"
-$Key = "C:/Users/LUOYN/.ssh/studio.pem"
+$Vps = $env:BLOG_VPS
+if (-not $Vps) { throw "Set $env:BLOG_VPS first, e.g. `$env:BLOG_VPS = 'ubuntu@<VPS_IP>'" }
+
+$Key = $env:BLOG_SSH_KEY
+if (-not $Key) { throw "Set $env:BLOG_SSH_KEY first, e.g. `$env:BLOG_SSH_KEY = 'C:/path/to/key.pem'" }
+
 $Tar = "deploy/repo.tar.gz"
 $RemoteTar = "/home/studio/app/repo.tar.gz"
 
@@ -44,4 +52,5 @@ Write-Host "[3/3] ssh + bash deploy-code.sh"
 ssh -i $Key -o IdentitiesOnly=yes $Vps "bash /home/studio/app/deploy-code.sh"
 if ($LASTEXITCODE -ne 0) { throw "deploy failed" }
 
-Write-Host "[OK] deployed. Visit http://49.232.38.216/ to verify."
+Write-Host "[OK] deployed."
+

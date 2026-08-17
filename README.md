@@ -61,7 +61,9 @@ deploy/              # VPS 部署脚本（见下文「部署」）
 
 ## 部署
 
-VPS：`ubuntu@49.232.38.216`，Caddy 静态站点，部署目录 `/home/studio/app`。
+VPS：`ubuntu@<VPS_IP>`（自有 IP，**不要提交到公开仓库**），Caddy 静态站点，部署目录 `/home/studio/app`。
+
+> 部署细节涉及具体 IP，**不要提交到 GitHub**。`deploy/pull.ps1` / `deploy/deploy-code.sh` 里的 IP 走环境变量（`$env:BLOG_VPS`）+ 私钥路径（`$env:BLOG_SSH_KEY`），不在源码里硬编码。
 
 **关键设计：内容/代码分离，两条独立推送链路**。
 
@@ -105,7 +107,7 @@ VPS `post-receive` 钩子自动：
 2. `cd /home/studio/app/repo && VAULT_ROOT=/home/studio/workbench npm run build`
 3. `rsync dist/ → public/`
 
-部署日志：`ssh ubuntu@49.232.38.216 "tail -30 /home/studio/app/deploy.log"`
+部署日志：`ssh ubuntu@<VPS_IP> "tail -30 /home/studio/app/deploy.log"`
 
 ### 首次部署
 
