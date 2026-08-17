@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { BookOpen, FileText, FolderGit2, Share2, Users, Search, Menu, X } from "lucide-react";
+import { BookOpen, FileText, FolderGit2, Share2, Users, Search, Menu, X, Archive } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
 
 interface NavbarProps {
@@ -10,6 +10,7 @@ interface NavbarProps {
 const NAV_ITEMS = [
   { to: "/", label: "首页", icon: BookOpen },
   { to: "/posts", label: "文章", icon: FileText },
+  { to: "/archive", label: "归档", icon: Archive },
   { to: "/projects", label: "项目", icon: FolderGit2 },
   { to: "/friends", label: "友链", icon: Users },
   { to: "/graph", label: "图谱", icon: Share2 },
