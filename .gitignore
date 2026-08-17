@@ -144,10 +144,22 @@ tools/verify_links.cjs
 tools/_archived/
 
 # debug/cleanup 临时脚本（被 src/routes/ 等敏感目录误写过的）
-src/routes/__fix.js
-src/routes/__fix.mjs
+src/routes/__fix.*
 src/routes/_fix.*
 src/routes/__tmp_*
+src/routes/-__fix.*
+
+# Vite dev/build 日志
+build.err
+build.out
+build.log
+dev.err
+dev.out
+dev.log
+
+# tarball 残留（部署时生成，但已被 .gitignore 通过 *.tar.gz 排除一部分）
+/repo.tar.gz
+/repo.b64
 # 部署时生成的大文件（不要入库）
 deploy/blog.tar.gz
 deploy/blog.b64
