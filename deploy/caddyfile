@@ -6,6 +6,7 @@
 
 # 1) 主域 + www 都直接服务静态文件
 #    Caddy 自动申请/续期 Let's Encrypt 证书
+#    （备案通过前证书会申请失败，属预期；备案通过后自动成功）
 www.jiangnanstudio.cloud, jiangnanstudio.cloud {
     root * /home/studio/app/public
     encode gzip zstd
@@ -16,4 +17,13 @@ www.jiangnanstudio.cloud, jiangnanstudio.cloud {
     }
     @assets path /assets/*
     header @assets Cache-Control "public, max-age=2592000, immutable"
+}
+
+# 2) 备案期间临时纯 IP + 80 端口直连验收
+#    （不经过域名，绕过未备案拦截；备案通过后删掉此块即可恢复域名 HTTPS）
+:80 {
+    root * /home/studio/app/public
+    encode gzip zstd
+    try_files {path} {path}/ /index.html
+    file_server
 }

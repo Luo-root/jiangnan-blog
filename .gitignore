@@ -7,7 +7,7 @@
 *.bak
 *.orig
 
-# ç¯å¢ƒå˜é‡ä¸å¯†é’?.env
+# ç¯å¢ƒå˜é‡ä¸å¯†ï¿½?.env
 .env.local
 .env.*.local
 *.pem
@@ -103,7 +103,7 @@ obj/
 .bundle/
 /vendor/
 
-# OneDay ä¸­é—´äº§ç‰©ç›®å½•ï¼ˆæ–‡ä»¶å¤„ç†æ—¶çš„ä¸´æ—¶æ–‡ä»¶ï¼Œä¸éœ€è¦æŒä¹…åŒ–ï¼?tmp/
+# OneDay ä¸­é—´äº§ç‰©ç›®å½•ï¼ˆæ–‡ä»¶å¤„ç†æ—¶çš„ä¸´æ—¶æ–‡ä»¶ï¼Œä¸éœ€è¦æŒä¹…åŒ–ï¿½?tmp/
 
 # other
 .meoo
@@ -111,11 +111,11 @@ obj/
 .config
 .accesslog
 
-# æ²™ç®±å´©æºƒï¼?äº§ç”Ÿçš„æ–‡ä»?/core
+# æ²™ç®±å´©æºƒï¿½?äº§ç”Ÿçš„æ–‡ï¿½?/core
 /.core.hmbtNy
 /.core.dump
 
-# ÏîÄ¿ÁÙÊ± / ºóÌ¨½ø³Ì
+# ï¿½ï¿½Ä¿ï¿½ï¿½Ê± / ï¿½ï¿½Ì¨ï¿½ï¿½ï¿½ï¿½
 .backup/
 .microcompact/
 .plan/
@@ -125,23 +125,29 @@ obj/
 .websearch/
 .workbuddy/
 
-# TanStack Router Â·ÓÉÊ÷£º
+# TanStack Router Â·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 routeTree.gen.ts
 
-# ±¾µØ¹¤¾ß²úÎï
+# ï¿½ï¿½ï¿½Ø¹ï¿½ï¿½ß²ï¿½ï¿½ï¿½
 meoo-manifest.json
 .meoo-manifest.json
-# ÔçÆÚÖ÷ÌâÍ¼ºòÑ¡¸å£¨ÒÑ·ÏÆú£©
+# ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¼ï¿½ï¿½Ñ¡ï¿½å£¨ï¿½Ñ·ï¿½ï¿½ï¿½ï¿½ï¿½
 assets/theme-candidate/
 public/assets/parallax/
-# µ÷ÊÔÓÃÒ»´ÎĞÔ½Å±¾£¨²»Ó¦ÈëÖ÷²Ö£©
+# ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Ô½Å±ï¿½ï¿½ï¿½ï¿½ï¿½Ó¦ï¿½ï¿½ï¿½ï¿½ï¿½Ö£ï¿½
 tools/_temp_*.py
 tools/_patch_slug.py
 tools/_crop_celestial.py
 tools/green_key.py
 tools/debug-hero.*
 tools/_archived/
-# ²¿ÊğÊ±Éú³ÉµÄ´óÎÄ¼ş
+# éƒ¨ç½²æ—¶ç”Ÿæˆçš„å¤§æ–‡ä»¶ï¼ˆä¸è¦å…¥åº“ï¼‰
+deploy/blog.tar.gz
+deploy/blog.b64
+deploy/node22.tar.xz
+deploy/workbench.tar.gz
 deploy/jiangnan-blog.tar.gz
 deploy/jiangnan-blog.b64
-deploy/workbench.tar.gz
+dist.tar.gz
+*.tar.gz
+*.tar.xz

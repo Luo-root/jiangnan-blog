@@ -68,11 +68,11 @@ function FriendsList() {
             <dt className="text-ink-4">名称</dt>
             <dd className="text-foreground">遇见江楠</dd>
             <dt className="text-ink-4">地址</dt>
-            <dd className="text-foreground">https://jiangnan.dev</dd>
+            <dd className="text-foreground">https://jiangnanstudio.cloud</dd>
             <dt className="text-ink-4">简介</dt>
             <dd className="text-foreground">朝曦入山，夜隐卷序 — 一座关于代码、写作与山水的小筑。</dd>
             <dt className="text-ink-4">头像</dt>
-            <dd className="break-all text-foreground">https://jiangnan.dev/assets/theme/logo.jpg</dd>
+            <dd className="break-all text-foreground">https://jiangnanstudio.cloud/assets/theme/logo.jpg</dd>
           </dl>
         </div>
       </section>

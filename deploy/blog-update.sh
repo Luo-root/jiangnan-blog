@@ -8,7 +8,7 @@
 set -euo pipefail
 
 REPO_DIR="/home/studio/app/repo"
-BUILD_DIR="/home/studio/app/build"
+DIST_DIR="/home/studio/app/repo/dist"
 PUBLIC_DIR="/home/studio/app/public"
 BACKUP_DIR="/home/studio/app/public.bak"
 WORKBENCH_DIR="/home/studio/workbench"
@@ -43,8 +43,8 @@ else
 fi
 
 # 4) 同步到 public
-if [ -d "$BUILD_DIR/dist" ]; then
-    rsync -a --delete "$BUILD_DIR/dist/" "$PUBLIC_DIR/"
+if [ -d "$DIST_DIR" ]; then
+    rsync -a --delete "$DIST_DIR/" "$PUBLIC_DIR/"
     log "deployed $REMOTE to public"
     rm -rf "$BACKUP_DIR"
 else

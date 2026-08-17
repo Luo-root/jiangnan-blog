@@ -16,7 +16,7 @@ set -euo pipefail
 DEPLOY_USER="ubuntu"
 APP_DIR="/home/studio/app"
 REPO_DIR="$APP_DIR/repo"
-BUILD_DIR="$APP_DIR/build"
+DIST_DIR="$REPO_DIR/dist"
 PUBLIC_DIR="$APP_DIR/public"
 CADDYFILE="/etc/caddy/Caddyfile"
 REPO_URL="https://github.com/Luo-root/jiangnan-blog.git"
@@ -62,7 +62,7 @@ echo "    node $(node -v) / npm $(npm -v)"
 
 # ---- 3. 准备目录结构 + 解压工作台（内容源） ----
 echo "[3/6] 准备目录结构 + 工作台..."
-mkdir -p "$APP_DIR" "$BUILD_DIR" "$PUBLIC_DIR" "$LOG_DIR" "$WORKBENCH_DIR"
+mkdir -p "$APP_DIR" "$PUBLIC_DIR" "$LOG_DIR" "$WORKBENCH_DIR"
 chown -R "$DEPLOY_USER":"$DEPLOY_USER" "$APP_DIR" "$WORKBENCH_DIR"
 chown -R "$DEPLOY_USER":"$DEPLOY_USER" "$LOG_DIR" 2>/dev/null || true
 
@@ -121,10 +121,6 @@ www.jiangnanstudio.cloud, jiangnanstudio.cloud {
     @assets path /assets/*
     header @assets Cache-Control "public, max-age=2592000, immutable"
 }
-
-http://www.jiangnanstudio.cloud, https://www.jiangnanstudio.cloud {
-    redir https://jiangnanstudio.cloud{uri} permanent
-}
 EOF
 
 caddy validate --config "$CADDYFILE"
@@ -140,12 +136,12 @@ else
     echo "    警告：$WORKBENCH_DIR 为空，build 会用空 vault（页面会没文章）"
     sudo -u "$DEPLOY_USER" npm run build
 fi
-if [ -d "$BUILD_DIR/dist" ]; then
-    rsync -a --delete "$BUILD_DIR/dist/" "$PUBLIC_DIR/"
+if [ -d "$DIST_DIR" ]; then
+    rsync -a --delete "$DIST_DIR/" "$PUBLIC_DIR/"
     chown -R "$DEPLOY_USER":"$DEPLOY_USER" "$PUBLIC_DIR"
     echo "    部署完成: $(du -sh "$PUBLIC_DIR" 2>&1 | cut -f1)"
 else
-    echo "    build 失败：$BUILD_DIR/dist 不存在"
+    echo "    build 失败：$DIST_DIR 不存在"
     exit 1
 fi
 
@@ -159,7 +155,7 @@ echo
 echo "================================================"
 echo "  部署完成"
 echo "  代码目录: $REPO_DIR"
-echo "  构建产物: $BUILD_DIR"
+echo "  构建产物: $DIST_DIR"
 echo "  服务目录: $PUBLIC_DIR (Caddy root)"
 echo "  日志目录: $LOG_DIR"
 echo "  域名: jiangnanstudio.cloud / www.jiangnanstudio.cloud"
