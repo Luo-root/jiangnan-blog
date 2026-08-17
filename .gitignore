@@ -142,6 +142,12 @@ tools/green_key.py
 tools/debug-hero.*
 tools/verify_links.cjs
 tools/_archived/
+
+# debug/cleanup 临时脚本（被 src/routes/ 等敏感目录误写过的）
+src/routes/__fix.js
+src/routes/__fix.mjs
+src/routes/_fix.*
+src/routes/__tmp_*
 # 部署时生成的大文件（不要入库）
 deploy/blog.tar.gz
 deploy/blog.b64

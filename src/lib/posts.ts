@@ -81,7 +81,6 @@ function processWikiLinks(
       alt = d.trim();
     }
     const name = target.split(/[#^]/)[0].trim();
-    // 优先笔记同目录，其次全局文件名索引
     let rel = noteDir && imageNameToRel[`${noteDir}/${name}`] ? imageNameToRel[`${noteDir}/${name}`] : imageNameToRel[name];
     if (!rel && name.includes("/")) rel = imageNameToRel[name.split("/").pop() || ""];
     if (rel) {
@@ -100,9 +99,7 @@ function processWikiLinks(
       target = t.trim();
       display = d.trim();
     }
-    // 去掉锚点/块引用
     const base = target.split(/[#^]/)[0].trim();
-    // 匹配顺序：完整路径 slug → 文件名 → 标题
     let slug = toSlug(base.replace(/\.md$/, ""));
     if (!slugSet.has(slug)) {
       const byName = titleToSlug.get(fileNameOf(base));
@@ -146,11 +143,11 @@ function processWikiLinks(
     let anchor = "";
     const hashIdx = s.indexOf("#");
     if (hashIdx >= 0) {
-      anchor = s.slice(hashIdx); // 保留 #
+      anchor = s.slice(hashIdx);
       s = s.slice(0, hashIdx);
     }
 
-    // 外部 / 协议 / 绝对路径：原样保留（anchor 拼回）
+    // 外部 / 协议 / 绝对路径：原样保留
     if (!s || /^(https?:|data:|blob:|mailto:|tel:)/i.test(s) || s.startsWith("/")) {
       return `[${text}](${raw})`;
     }
@@ -162,7 +159,7 @@ function processWikiLinks(
     const tryFull = noteDir ? toSlug(`${noteDir}/${cleaned}`) : toSlug(cleaned);
     let slug = slugSet.has(tryFull) ? tryFull : "";
 
-    // 2) 文件名匹配（如 README 直接对 README）
+    // 2) 文件名匹配
     if (!slug) {
       const byName = titleToSlug.get(fileNameOf(cleaned));
       if (byName && slugSet.has(byName)) slug = byName;
