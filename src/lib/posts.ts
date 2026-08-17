@@ -128,6 +128,61 @@ function processWikiLinks(
     return `![${alt}](/vault/${encodeURI(rel)})`;
   });
 
+  // 4) 普通 markdown 相对路径链接 [text](docs/12-smoke-test.md) → /posts/<slug>
+  //    Obsidian 写的文章大多用这种形式（不是 [[WikiLink]]），必须解析成站内 slug
+  //    保留 #anchor；保留可选 title "..."
+  content = content.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, text: string, raw: string) => {
+    let s = raw.trim();
+
+    // 拆出 title 属性（格式：url "title"）— 罕见但 markdown 允许
+    let titleAttr = "";
+    const tm = s.match(/^(\S+)\s+(".*?"|'.*?'|\(.*\))$/);
+    if (tm) {
+      s = tm[1];
+      titleAttr = ` ${tm[2]}`;
+    }
+
+    // 拆出 #anchor
+    let anchor = "";
+    const hashIdx = s.indexOf("#");
+    if (hashIdx >= 0) {
+      anchor = s.slice(hashIdx); // 保留 #
+      s = s.slice(0, hashIdx);
+    }
+
+    // 外部 / 协议 / 绝对路径：原样保留（anchor 拼回）
+    if (!s || /^(https?:|data:|blob:|mailto:|tel:)/i.test(s) || s.startsWith("/")) {
+      return `[${text}](${raw})`;
+    }
+
+    // 相对路径：去掉 .md、去掉 ./ 前缀
+    const cleaned = s.replace(/^\.\//, "").replace(/\.md$/i, "");
+
+    // 1) 相对当前笔记目录的完整路径（noteDir + cleaned）→ slug
+    const tryFull = noteDir ? toSlug(`${noteDir}/${cleaned}`) : toSlug(cleaned);
+    let slug = slugSet.has(tryFull) ? tryFull : "";
+
+    // 2) 文件名匹配（如 README 直接对 README）
+    if (!slug) {
+      const byName = titleToSlug.get(fileNameOf(cleaned));
+      if (byName && slugSet.has(byName)) slug = byName;
+    }
+
+    // 3) 标题匹配
+    if (!slug) {
+      const byTitle = titleToSlug.get(cleaned);
+      if (byTitle && slugSet.has(byTitle)) slug = byTitle;
+    }
+
+    if (slug) {
+      if (!links.includes(slug)) links.push(slug);
+      return `[${text}](/posts/${slug}${anchor}${titleAttr})`;
+    }
+
+    // 找不到对应笔记 → 保持原样（避免误转外链）
+    return m;
+  });
+
   return { content, links };
 }
 
