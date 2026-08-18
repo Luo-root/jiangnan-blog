@@ -22,6 +22,9 @@ const SOURCE_LOCATION_PLUGIN_PATH = SOURCE_LOCATION_PLUGIN_CANDIDATES.find((path
 const VAULT_ROOT = process.env.VAULT_ROOT || "D:/Data/工作台";
 const VAULT_IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".bmp", ".ico"]);
 
+// 不作为公开博客栏目的一级目录（Workbase 是私有 Agent 工作基座目录）
+const EXCLUDED_SECTIONS = new Set([".obsidian", ".trash", "Workbase"]);
+
 const MIME_MAP: Record<string, string> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -51,7 +54,7 @@ function walkVaultImages(): string[] {
     for (const entry of entries) {
       const abs = join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (entry.name === ".obsidian" || entry.name === ".trash") continue;
+        if (EXCLUDED_SECTIONS.has(entry.name)) continue;
         walk(abs);
       } else if (VAULT_IMAGE_EXTS.has(extname(entry.name).toLowerCase())) {
         out.push(abs);
@@ -90,7 +93,7 @@ function buildVaultTree(): Record<string, Record<string, string>> {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const section = entry.name;
-    if (section === ".obsidian" || section === ".trash") continue;
+    if (EXCLUDED_SECTIONS.has(section)) continue;
     const files: Record<string, string> = {};
     const walk = (dir: string) => {
       let sub;
@@ -102,7 +105,7 @@ function buildVaultTree(): Record<string, Record<string, string>> {
       for (const e of sub) {
         const abs = join(dir, e.name);
         if (e.isDirectory()) {
-          if (e.name === ".obsidian" || e.name === ".trash") continue;
+          if (EXCLUDED_SECTIONS.has(e.name)) continue;
           walk(abs);
         } else if (e.name.toLowerCase().endsWith(".md")) {
           const rel = resolve(abs).slice(root.length).replace(/^[\\/]+/, "").split(sep).join("/");

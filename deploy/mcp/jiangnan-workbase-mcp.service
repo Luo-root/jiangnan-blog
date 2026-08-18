@@ -1,0 +1,22 @@
+[Unit]
+Description=Jiangnan Agent Workbase MCP
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/studio/workbase
+ExecStart=/home/studio/workbase/bin/workbase-mcp -config /home/studio/workbase/config.yaml
+Restart=on-failure
+RestartSec=3
+Environment=HOME=/home/ubuntu
+
+# Keep git author identity stable for apply commits
+Environment=GIT_AUTHOR_NAME=workbase-mcp
+Environment=GIT_AUTHOR_EMAIL=workbase-mcp@localhost
+Environment=GIT_COMMITTER_NAME=workbase-mcp
+Environment=GIT_COMMITTER_EMAIL=workbase-mcp@localhost
+
+[Install]
+WantedBy=multi-user.target

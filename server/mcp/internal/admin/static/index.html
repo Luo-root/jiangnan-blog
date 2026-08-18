@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Workbase · 管理后台</title>
+<style>
+  :root {
+    --bg: #f4f6fb;
+    --panel: #ffffff;
+    --panel-border: #e3e8f0;
+    --panel-border-strong: #d4dbe8;
+    --ink-1: #1b2434;
+    --ink-2: #4a5568;
+    --ink-3: #8492a6;
+    --ink-4: #a7b2c2;
+    --ink-5: #dde3ee;
+    --accent: #4c6ef5;
+    --accent-soft: rgba(76,110,245,.08);
+    --accent-warm: #e8892c;
+    --danger: #e5534b;
+    --danger-soft: rgba(229,83,75,.08);
+    --ok: #23a26d;
+    --ok-soft: rgba(35,162,109,.10);
+    --warning: #d9822b;
+    --warning-soft: rgba(217,130,43,.12);
+    --shadow-sm: 0 1px 2px rgba(16,24,40,.05);
+    --shadow-md: 0 4px 16px rgba(16,24,40,.08);
+    --mono: "SF Mono", "JetBrains Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink-1);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, textarea, input { font: inherit; }
+  button { cursor: pointer; }
+  .app { display: flex; height: 100vh; min-width: 960px; }
+
+  .sidebar {
+    width: 240px; flex: 0 0 240px; display: flex; flex-direction: column;
+    background: #ffffff; border-right: 1px solid var(--panel-border); padding: 22px 14px;
+  }
+  .brand { padding: 0 12px 24px; border-bottom: 1px solid var(--panel-border); }
+  .brand h1 { font-size: 18px; letter-spacing: .5px; font-weight: 700; }
+  .brand h1 span { color: var(--accent); }
+  .brand p { margin-top: 7px; color: var(--ink-3); font: 11px var(--mono); }
+  .nav { padding-top: 20px; }
+  .nav-title { padding: 0 12px 8px; color: var(--ink-4); font: 10px var(--mono); letter-spacing: 1px; text-transform: uppercase; }
+  .nav-btn {
+    width: 100%; display: flex; align-items: center; gap: 10px; padding: 11px 12px;
+    border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--ink-2);
+    text-align: left; font-size: 13px; transition: .15s;
+  }
+  .nav-btn:hover { background: var(--bg); color: var(--ink-1); }
+  .nav-btn.active { background: var(--accent-soft); border-color: rgba(76,110,245,.18); color: var(--accent); font-weight: 600; }
+  .nav-icon { width: 18px; color: var(--ink-3); text-align: center; font-family: var(--mono); }
+  .nav-btn.active .nav-icon { color: var(--accent); }
+  .sidebar-foot { margin-top: auto; padding: 14px 12px 0; border-top: 1px solid var(--panel-border); color: var(--ink-4); font: 10px/1.6 var(--mono); }
+
+  .main { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+  .topbar { height: 72px; flex: 0 0 72px; display: flex; align-items: center; justify-content: space-between; padding: 0 30px; border-bottom: 1px solid var(--panel-border); background: rgba(255,255,255,.85); backdrop-filter: blur(8px); }
+  .topbar h2 { font-size: 18px; font-weight: 700; }
+  .topbar .hint { margin-top: 5px; color: var(--ink-3); font-size: 12px; }
+  .topbar-meta { color: var(--ink-3); font: 11px var(--mono); letter-spacing: .5px; }
+  .content { flex: 1; min-height: 0; overflow: hidden; padding: 26px 30px 30px; }
+  .view { display: none; height: 100%; min-height: 0; }
+  .view.active { display: flex; flex-direction: column; }
+  .view-head { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 18px; flex: 0 0 auto; }
+  .view-head h3 { font-size: 15px; font-weight: 700; }
+  .view-head p { margin-top: 5px; color: var(--ink-3); font-size: 12px; }
+  .primary-btn { border: 0; border-radius: 7px; padding: 9px 15px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; box-shadow: var(--shadow-sm); transition: .15s; }
+  .primary-btn:hover { background: #3b5bf0; }
+
+  .board { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, minmax(220px, 1fr)); gap: 14px; }
+  .col { min-height: 0; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-sm); }
+  .col.drag-over { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .col-head { flex: 0 0 auto; padding: 12px 14px; border-bottom: 1px solid var(--panel-border); display: flex; align-items: center; gap: 8px; background: #fafbfe; }
+  .col-head .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .dot.pending { background: var(--accent-warm); } .dot.reviewing { background: var(--warning); } .dot.done { background: var(--ok); } .dot.abandoned { background: var(--ink-4); }
+  .col-head .name { font-size: 13px; font-weight: 600; } .col-head .count { margin-left: auto; color: var(--ink-3); font: 11px var(--mono); }
+  .col-body { min-height: 0; flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; scrollbar-width: thin; scrollbar-color: var(--ink-4) transparent; }
+  .col-body::-webkit-scrollbar, .detail-body::-webkit-scrollbar, .proposal-list::-webkit-scrollbar, .heat-list::-webkit-scrollbar { width: 7px; }
+  .col-body::-webkit-scrollbar-thumb, .detail-body::-webkit-scrollbar-thumb, .proposal-list::-webkit-scrollbar-thumb, .heat-list::-webkit-scrollbar-thumb { background: var(--ink-4); border-radius: 8px; }
+  .card { flex: 0 0 auto; background: var(--panel); border: 1px solid var(--panel-border); border-radius: 9px; padding: 12px; cursor: grab; transition: .14s; box-shadow: var(--shadow-sm); }
+  .card:hover { border-color: var(--panel-border-strong); transform: translateY(-1px); box-shadow: var(--shadow-md); }
+  .card.dragging { opacity: .4; }
+  .card-title { color: var(--ink-1); font-size: 13px; line-height: 1.45; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card-summary { margin-top: 5px; color: var(--ink-3); font-size: 11px; line-height: 1.55; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  .card-meta { margin-top: 11px; display: flex; align-items: center; gap: 8px; color: var(--ink-4); font: 10px var(--mono); }
+  .card-meta .by { color: var(--accent); }
+  .empty { color: var(--ink-4); font-size: 12px; text-align: center; padding: 28px 0; }
+
+  .heat-panel, .proposal-list { flex: 1; min-height: 0; overflow-y: auto; background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px; padding: 16px 18px; box-shadow: var(--shadow-sm); }
+  .heat-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--ink-5); }
+  .heat-row:last-child { border-bottom: none; }
+  .heat-row .label { width: 280px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12px var(--mono); }
+  .bar-wrap { flex: 1; height: 10px; overflow: hidden; background: var(--ink-5); border-radius: 5px; }
+  .bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-warm)); border-radius: 5px; }
+  .heat-row .num { width: 50px; color: var(--ink-1); text-align: right; font: 12px var(--mono); }
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  .stat { padding: 14px; background: var(--panel); border: 1px solid var(--panel-border); border-radius: 10px; box-shadow: var(--shadow-sm); }
+  .stat .label { color: var(--ink-3); font-size: 11px; } .stat .value { margin-top: 7px; color: var(--accent); font: 22px var(--mono); font-weight: 600; }
+
+  .proposal-item { padding: 15px; margin-bottom: 10px; background: var(--panel); border: 1px solid var(--panel-border); border-radius: 10px; cursor: pointer; transition: .14s; box-shadow: var(--shadow-sm); }
+  .proposal-item:hover { border-color: var(--panel-border-strong); }
+  .proposal-item:last-child { margin-bottom: 0; }
+  .proposal-top { display: flex; align-items: center; gap: 10px; }
+  .proposal-id { color: var(--accent); font: 12px var(--mono); font-weight: 600; } .status-pill { padding: 3px 8px; border-radius: 99px; font: 10px var(--mono); font-weight: 600; }
+  .status-pill.pending { background: var(--warning-soft); color: var(--warning); }
+  .status-pill.approved { background: var(--ok-soft); color: var(--ok); }
+  .status-pill.rejected { background: var(--danger-soft); color: var(--danger); }
+  .status-pill.applied { background: var(--ok-soft); color: var(--ok); }
+  .status-pill.conflict { background: var(--danger-soft); color: var(--danger); }
+  .proposal-reason { margin-top: 9px; color: var(--ink-1); font-size: 13px; } .proposal-target { margin-top: 9px; color: var(--ink-3); font: 11px/1.6 var(--mono); }
+  .proposal-detail { display: none; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--ink-5); }
+  .proposal-detail.open { display: block; }
+  .proposal-detail .field { margin-bottom: 10px; } .proposal-detail .field .key { color: var(--ink-4); font: 10px var(--mono); margin-bottom: 3px; text-transform: uppercase; letter-spacing: .5px; }
+  .proposal-detail .field .val { color: var(--ink-1); font: 13px/1.6 -apple-system, sans-serif; white-space: pre-wrap; }
+  .proposal-detail .field .val-mono { color: var(--ink-2); font: 12px var(--mono); word-break: break-all; }
+  .proposal-actions { display: flex; gap: 8px; margin-top: 14px; }
+  .btn-approve { border: 0; border-radius: 7px; padding: 8px 15px; background: var(--ok); color: #fff; font-size: 12px; font-weight: 600; transition: .15s; }
+  .btn-reject { border: 0; border-radius: 7px; padding: 8px 15px; background: var(--danger); color: #fff; font-size: 12px; font-weight: 600; transition: .15s; }
+  .btn-edit { border: 1px solid var(--panel-border-strong); border-radius: 7px; padding: 8px 15px; background: #fff; color: var(--ink-2); font-size: 12px; font-weight: 600; transition: .15s; }
+  .btn-edit:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-approve:hover, .btn-reject:hover { filter: brightness(1.06); }
+  .proposal-edit-area { display: none; margin-top: 12px; }
+  .proposal-edit-area.open { display: block; }
+  .proposal-edit-area label { display: block; margin-bottom: 10px; }
+  .proposal-edit-area label .key { color: var(--ink-4); font: 10px var(--mono); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .5px; display: block; }
+  .proposal-edit-area input, .proposal-edit-area textarea {
+    width: 100%; padding: 9px 11px; border: 1px solid var(--panel-border-strong); border-radius: 7px;
+    outline: none; background: #fff; color: var(--ink-1); font-size: 13px; line-height: 1.6;
+  }
+  .proposal-edit-area textarea { min-height: 120px; resize: vertical; }
+  .proposal-edit-area input:focus, .proposal-edit-area textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .edit-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  .modal-backdrop { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; padding: 20px; background: rgba(16,24,40,.45); }
+  .modal-backdrop.open { display: flex; }
+  .modal { width: 640px; max-width: 100%; max-height: min(720px, 90vh); display: flex; flex-direction: column; overflow: hidden; background: var(--panel); border: 1px solid var(--panel-border); border-radius: 14px; box-shadow: 0 18px 60px rgba(16,24,40,.25); }
+  .modal-head { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--panel-border); }
+  .modal-head h3 { font-size: 15px; font-weight: 700; } .close-btn { border: 0; background: transparent; color: var(--ink-3); font-size: 20px; line-height: 1; }
+  .close-btn:hover { color: var(--ink-1); }
+  .modal-head .head-actions { display: flex; align-items: center; gap: 10px; }
+  .edit-toggle { border: 1px solid var(--panel-border-strong); border-radius: 7px; padding: 6px 12px; background: #fff; color: var(--ink-2); font-size: 12px; font-weight: 600; }
+  .edit-toggle:hover { color: var(--accent); border-color: var(--accent); }
+  .detail-body { min-height: 0; overflow-y: auto; padding: 20px; }
+  .detail-body pre { white-space: pre-wrap; word-break: break-word; color: var(--ink-1); font: 13px/1.8 -apple-system, "PingFang SC", sans-serif; }
+  .detail-meta { margin-bottom: 16px; color: var(--ink-3); font: 10px/1.8 var(--mono); }
+  .detail-body.view-mode .edit-area { display: none; }
+  .detail-body.edit-mode .view-area { display: none; }
+  .edit-area textarea { width: 100%; min-height: 300px; resize: vertical; padding: 12px; border: 1px solid var(--panel-border-strong); border-radius: 8px; outline: none; background: #fff; color: var(--ink-1); font-size: 13px; line-height: 1.7; }
+  .edit-area textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .edit-area .edit-hint { margin-bottom: 10px; color: var(--ink-3); font-size: 11px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 14px; }
+  .ghost-btn { padding: 8px 13px; border: 1px solid var(--panel-border-strong); border-radius: 7px; background: #fff; color: var(--ink-2); font-size: 12px; font-weight: 600; }
+  .ghost-btn:hover { color: var(--ink-1); border-color: var(--ink-4); }
+  @media (max-width: 1100px) { .sidebar { width: 200px; flex-basis: 200px; } .content { padding-left: 20px; padding-right: 20px; } .topbar { padding: 0 20px; } .board { gap: 9px; } .heat-row .label { width: 220px; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><h1>Workbase · <span>后台</span></h1><p>Blog as Agent Workbase</p></div>
+    <nav class="nav">
+      <div class="nav-title">Workspace</div>
+      <button class="nav-btn active" data-view="inbox"><span class="nav-icon">▦</span><span>待办看板</span></button>
+      <button class="nav-btn" data-view="heat"><span class="nav-icon">◒</span><span>访问热度</span></button>
+      <button class="nav-btn" data-view="proposals"><span class="nav-icon">◇</span><span>Proposal</span></button>
+    </nav>
+    <div class="sidebar-foot">本地管理端<br>数据来自 Workbase 私有区</div>
+  </aside>
+  <main class="main">
+    <header class="topbar"><div><h2 id="page-title">待办看板</h2><p class="hint" id="page-hint">拖拽卡片调整状态，点击卡片查看完整任务</p></div><div class="topbar-meta" id="topbar-meta">INBOX</div></header>
+    <section class="content">
+      <div class="view active" id="view-inbox">
+        <div class="view-head"><div><h3>任务流</h3><p>卡片展示任务名称与简介，完整表述在详情中查看。</p></div><button class="primary-btn" onclick="openCreate()">+ 新建待办</button></div>
+        <div class="board" id="board">
+          <div class="col" data-status="pending"><div class="col-head"><span class="dot pending"></span><span class="name">待处理</span><span class="count" id="count-pending">0</span></div><div class="col-body" id="col-pending"></div></div>
+          <div class="col" data-status="reviewing"><div class="col-head"><span class="dot reviewing"></span><span class="name">待审核</span><span class="count" id="count-reviewing">0</span></div><div class="col-body" id="col-reviewing"></div></div>
+          <div class="col" data-status="done"><div class="col-head"><span class="dot done"></span><span class="name">已完成</span><span class="count" id="count-done">0</span></div><div class="col-body" id="col-done"></div></div>
+          <div class="col" data-status="abandoned"><div class="col-head"><span class="dot abandoned"></span><span class="name">已废弃</span><span class="count" id="count-abandoned">0</span></div><div class="col-body" id="col-abandoned"></div></div>
+        </div>
+      </div>
+
+      <div class="view" id="view-heat">
+        <div class="view-head"><div><h3>访问热度</h3><p>读取次数越高的资源排序越靠前，用于观察 Workbase 的实际使用信号。</p></div></div>
+        <div class="stat-grid"><div class="stat"><div class="label">资源总数</div><div class="value" id="heat-total">—</div></div><div class="stat"><div class="label">最高访问</div><div class="value" id="heat-max">—</div></div><div class="stat"><div class="label">累计读取</div><div class="value" id="heat-sum">—</div></div></div>
+        <div class="heat-panel"><div id="heat-list"></div></div>
+      </div>
+
+      <div class="view" id="view-proposals">
+        <div class="view-head"><div><h3>Proposal 管理</h3><p>正式知识写入请求：可查看、编辑后同意或拒绝。</p></div></div>
+        <div class="proposal-list" id="proposal-list"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="detail-modal">
+  <div class="modal">
+    <div class="modal-head"><h3 id="detail-title">待办详情</h3><div class="head-actions"><button class="edit-toggle" id="edit-toggle" onclick="toggleEdit()">编辑</button><button class="close-btn" onclick="closeModal('detail-modal')">×</button></div></div>
+    <div class="detail-body view-mode" id="detail-body">
+      <div class="view-area">
+        <div class="detail-meta" id="detail-meta"></div>
+        <pre id="detail-content"></pre>
+      </div>
+      <div class="edit-area">
+        <div class="edit-hint" id="edit-hint">编辑完整任务描述，支持 Markdown。</div>
+        <textarea id="edit-content" placeholder="完整任务描述，支持多段文本和 Markdown…"></textarea>
+        <div class="modal-actions"><button class="ghost-btn" onclick="cancelEdit()">取消</button><button class="primary-btn" onclick="saveEdit()">保存</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal-backdrop" id="create-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>新建待办</h3><button class="close-btn" onclick="closeModal('create-modal')">×</button></div>
+    <div class="detail-body"><div class="edit-area"><div class="edit-hint">输入完整任务描述，支持 Markdown。</div><textarea id="create-content" placeholder="完整任务描述，支持多段文本和 Markdown…"></textarea><div class="modal-actions"><button class="ghost-btn" onclick="closeModal('create-modal')">取消</button><button class="primary-btn" onclick="createItem()">保存</button></div></div></div>
+  </div>
+</div>
+
+<script>
+const STATUS_LABEL = { pending: '待处理', reviewing: '待审核', done: '已完成', abandoned: '已废弃' };
+const PROP_STATUS_LABEL = { pending: '待审批', approved: '已批准', rejected: '已拒绝', applied: '已应用', conflict: '冲突' };
+const VIEW_META = {
+  inbox: ['待办看板', '拖拽卡片调整状态，点击卡片查看完整任务', 'INBOX'],
+  heat: ['访问热度', '观察知识与能力资源的实际使用信号', 'HEAT'],
+  proposals: ['Proposal', '正式知识写入请求管理', 'PROPOSAL']
+};
+let items = [], detailId = null, dragId = null, proposalCache = null;
+
+async function api(path, method = 'GET', body) {
+  const opts = { method, headers: {} };
+  if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function splitContent(content) {
+  const lines = String(content || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  const heading = lines.find(x => /^#{1,6}\s+/.test(x));
+  const title = heading ? heading.replace(/^#{1,6}\s+/, '') : (lines[0] || '未命名待办');
+  const body = lines.find(x => !/^#{1,6}\s+/.test(x)) || '';
+  return { title: title.slice(0, 80), summary: body.slice(0, 180) || '点击查看完整任务描述' };
+}
+function cardHTML(item) {
+  const title = item.title || splitContent(item.summary || '').title;
+  const desc = item.description || '';
+  const summary = (desc && desc !== title) ? desc : '点击查看完整任务描述';
+  return `<article class="card" draggable="true" data-id="${escapeHtml(item.id)}" onclick="openDetail('${escapeHtml(item.id)}')">
+    <div class="card-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
+    <div class="card-summary">${escapeHtml(summary)}</div>
+    <div class="card-meta"><span class="by">${escapeHtml(item.created_by || '')}</span><span>${escapeHtml((item.updated_at || item.created_at || '').slice(0,16))}</span></div>
+  </article>`;
+}
+function renderInbox() {
+  for (const st of Object.keys(STATUS_LABEL)) {
+    const col = document.getElementById('col-' + st), list = items.filter(i => i.status === st);
+    document.getElementById('count-' + st).textContent = list.length;
+    col.innerHTML = list.length ? list.map(cardHTML).join('') : '<div class="empty">— 空 —</div>';
+    col.querySelectorAll('.card').forEach(el => { el.addEventListener('dragstart', onDragStart); el.addEventListener('dragend', onDragEnd); });
+  }
+}
+async function loadInbox() { items = await api('/api/inbox'); renderInbox(); }
+
+async function openDetail(id) {
+  try {
+    const item = await api('/api/inbox/' + encodeURIComponent(id));
+    detailId = id;
+    const info = splitContent(item.content);
+    document.getElementById('detail-title').textContent = info.title;
+    document.getElementById('detail-meta').textContent = `${STATUS_LABEL[item.status] || item.status} · ${item.created_by || ''} · 更新于 ${item.updated_at || ''}`;
+    document.getElementById('detail-content').textContent = item.content || '(empty)';
+    setDetailMode('view');
+    document.getElementById('edit-content').value = item.content || '';
+    document.getElementById('detail-modal').classList.add('open');
+  } catch (e) { alert('读取待办失败: ' + e.message); }
+}
+function setDetailMode(mode) {
+  const body = document.getElementById('detail-body');
+  const toggle = document.getElementById('edit-toggle');
+  body.classList.toggle('view-mode', mode === 'view');
+  body.classList.toggle('edit-mode', mode === 'edit');
+  toggle.textContent = mode === 'view' ? '编辑' : '查看';
+}
+function toggleEdit() {
+  const body = document.getElementById('detail-body');
+  setDetailMode(body.classList.contains('view-mode') ? 'edit' : 'view');
+}
+function cancelEdit() { setDetailMode('view'); }
+async function saveEdit() {
+  const content = document.getElementById('edit-content').value.trim();
+  if (!content) return;
+  try { await api('/api/inbox/' + encodeURIComponent(detailId), 'PUT', { content }); setDetailMode('view'); await loadInbox(); await openDetail(detailId); } catch (err) { alert('保存失败: ' + err.message); }
+}
+function openCreate() { document.getElementById('create-content').value = ''; document.getElementById('create-modal').classList.add('open'); document.getElementById('create-content').focus(); }
+async function createItem() {
+  const content = document.getElementById('create-content').value.trim();
+  if (!content) return;
+  try { await api('/api/inbox', 'POST', { content, created_by: 'webui' }); closeModal('create-modal'); await loadInbox(); } catch (err) { alert('保存失败: ' + err.message); }
+}
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function onDragStart(e) { dragId = e.currentTarget.dataset.id; e.currentTarget.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; }
+function onDragEnd(e) { e.currentTarget.classList.remove('dragging'); dragId = null; }
+document.querySelectorAll('.col').forEach(col => {
+  col.addEventListener('dragover', e => { e.preventDefault(); col.classList.add('drag-over'); });
+  col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
+  col.addEventListener('drop', async e => { e.preventDefault(); col.classList.remove('drag-over'); if (!dragId) return; try { await api('/api/inbox/' + encodeURIComponent(dragId), 'PUT', { status: col.dataset.status }); await loadInbox(); } catch (err) { alert('移动失败: ' + err.message); } });
+});
+
+async function loadHeat() {
+  const hot = await api('/api/heat');
+  const total = hot.reduce((n, x) => n + (x.count || 0), 0);
+  const max = hot[0]?.count || 0;
+  document.getElementById('heat-total').textContent = hot.length;
+  document.getElementById('heat-max').textContent = max;
+  document.getElementById('heat-sum').textContent = total;
+  const el = document.getElementById('heat-list');
+  if (!hot.length) { el.innerHTML = '<div class="empty">暂无访问记录</div>'; return; }
+  el.innerHTML = hot.slice(0, 50).map(h => `<div class="heat-row"><div class="label" title="${escapeHtml(h.resource_id)}">${escapeHtml(h.resource_id)}</div><div class="bar-wrap"><div class="bar" style="width:${Math.round((h.count / max) * 100)}%"></div></div><div class="num">${h.count}</div></div>`).join('');
+}
+
+// --- Proposal：查看 → 编辑 → 审批（设计文档 §21.5「同意 / 编辑后同意 / 拒绝」） ---
+function proposalHTML(p) {
+  const status = p.status || 'pending';
+  const label = PROP_STATUS_LABEL[status] || status;
+  const target = p.target?.path || p.target?.id || '未指定';
+  const op = p.operation?.type || '—';
+  const section = p.operation?.section || '';
+  const content = p.payload?.content || '';
+  const canReview = status === 'pending';
+  return `<article class="proposal-item" data-id="${escapeHtml(p.id)}">
+    <div class="proposal-top"><span class="proposal-id">${escapeHtml(p.id)}</span><span class="status-pill ${escapeHtml(status)}">${escapeHtml(label)}</span></div>
+    <div class="proposal-reason">${escapeHtml(p.reason || p.kind || '未填写原因')}</div>
+    <div class="proposal-target">目标：${escapeHtml(target)}<br>创建者：${escapeHtml(p.created_by || '')} · ${escapeHtml((p.created_at || '').slice(0,19))}</div>
+    <div class="proposal-detail" id="prop-detail-${escapeHtml(p.id)}">
+      <div class="field"><div class="key">操作</div><div class="val-mono">${escapeHtml(op)}${section ? ' · ' + escapeHtml(section) : ''}</div></div>
+      <div class="field"><div class="key">目标路径</div><div class="val-mono">${escapeHtml(target)}</div></div>
+      <div class="field"><div class="key">Payload 内容</div><div class="val">${escapeHtml(content || '(空)')}</div></div>
+      <div class="proposal-actions" id="prop-actions-${escapeHtml(p.id)}">
+        ${canReview ? `<button class="btn-edit" onclick="editProposal(event, '${escapeHtml(p.id)}')">编辑</button><button class="btn-approve" onclick="reviewProposal(event, '${escapeHtml(p.id)}', 'approved')">批准</button><button class="btn-reject" onclick="reviewProposal(event, '${escapeHtml(p.id)}', 'rejected')">拒绝</button>` : `<div class="detail-meta" style="margin:0">该 Proposal 已 ${escapeHtml(label)}，状态不可再变更。</div>`}
+      </div>
+    </div>
+  </article>`;
+}
+async function loadProposals() {
+  const list = await api('/api/proposals'), el = document.getElementById('proposal-list');
+  proposalCache = list;
+  if (!list.length) { el.innerHTML = '<div class="empty">暂无 Proposal</div>'; return; }
+  el.innerHTML = list.map(proposalHTML).join('');
+}
+document.addEventListener('click', e => {
+  const item = e.target.closest('.proposal-item');
+  if (item && e.target.tagName !== 'BUTTON' && !e.target.closest('.proposal-edit-area')) {
+    item.querySelector('.proposal-detail').classList.toggle('open');
+  }
+});
+async function reviewProposal(e, id, status) {
+  e.stopPropagation();
+  const label = status === 'approved' ? '批准' : '拒绝';
+  if (!confirm(`确认${label}该 Proposal？`)) return;
+  try { await api('/api/proposals/' + encodeURIComponent(id), 'PUT', { status }); await loadProposals(); } catch (err) { alert(`${label}失败: ` + err.message); }
+}
+function editProposal(e, id) {
+  e.stopPropagation();
+  const p = (proposalCache || []).find(x => x.id === id);
+  if (!p) return;
+  const detail = document.getElementById('prop-detail-' + id);
+  const actions = document.getElementById('prop-actions-' + id);
+  detail.querySelector('.proposal-edit-area')?.remove();
+  detail.insertAdjacentHTML('beforeend', `<div class="proposal-edit-area open" id="prop-edit-${escapeHtml(id)}">
+    <label><span class="key">原因 / Reason</span><input id="edit-reason-${escapeHtml(id)}" value="${escapeHtml(p.reason || '')}"></label>
+    <div class="edit-row">
+      <label><span class="key">操作类型 / Operation</span><input id="edit-op-${escapeHtml(id)}" value="${escapeHtml(p.operation?.type || '')}"></label>
+      <label><span class="key">Section</span><input id="edit-section-${escapeHtml(id)}" value="${escapeHtml(p.operation?.section || '')}"></label>
+    </div>
+    <label><span class="key">目标路径 / Target</span><input id="edit-target-${escapeHtml(id)}" value="${escapeHtml(p.target?.path || '')}"></label>
+    <label><span class="key">Payload 内容</span><textarea id="edit-payload-${escapeHtml(id)}">${escapeHtml(p.payload?.content || '')}</textarea></label>
+    <div class="proposal-actions">
+      <button class="ghost-btn" onclick="cancelEditProposal(event, '${escapeHtml(id)}')">取消</button>
+      <button class="primary-btn" onclick="saveProposalEdit(event, '${escapeHtml(id)}')">保存修改</button>
+    </div>
+  </div>`);
+  actions.style.display = 'none';
+}
+function cancelEditProposal(e, id) {
+  e.stopPropagation();
+  document.getElementById('prop-edit-' + id)?.remove();
+  document.getElementById('prop-actions-' + id).style.display = '';
+}
+async function saveProposalEdit(e, id) {
+  e.stopPropagation();
+  const found = (proposalCache || []).find(x => x.id === id);
+  const patch = {
+    reason: document.getElementById('edit-reason-' + id).value.trim(),
+    target: { type: found?.target?.type || 'note', path: document.getElementById('edit-target-' + id).value.trim() },
+    operation: { type: document.getElementById('edit-op-' + id).value.trim(), section: document.getElementById('edit-section-' + id).value.trim() },
+    payload: { format: 'markdown', content: document.getElementById('edit-payload-' + id).value }
+  };
+  try {
+    await api('/api/proposals/' + encodeURIComponent(id), 'PATCH', patch);
+    await loadProposals();
+    setTimeout(() => document.getElementById('prop-detail-' + id)?.classList.add('open'), 50);
+  } catch (err) { alert('保存修改失败: ' + err.message); }
+}
+
+function switchView(view) {
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
+  const meta = VIEW_META[view];
+  document.getElementById('page-title').textContent = meta[0];
+  document.getElementById('page-hint').textContent = meta[1];
+  document.getElementById('topbar-meta').textContent = meta[2];
+  if (view === 'heat') loadHeat();
+  if (view === 'proposals') loadProposals();
+}
+document.querySelectorAll('.nav-btn').forEach(btn => btn.addEventListener('click', () => switchView(btn.dataset.view)));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal('detail-modal'); closeModal('create-modal'); } });
+loadInbox(); loadHeat(); loadProposals(); setInterval(() => { loadInbox(); }, 30000);
+</script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+# VPS production config EXAMPLE for Agent Workbase MCP v0.1
+# Copy to config.vps.yaml locally, fill hashes, then run deploy-vps.ps1.
+# Real config.vps.yaml is gitignored — do not commit live hashes if avoidable.
+server:
+  listen: 127.0.0.1:8787
+
+vault:
+  root: /home/studio/workbench
+  git_dir: /home/studio/vault.git
+
+workbase:
+  root: /home/studio/workbase
+  index: /home/studio/workbase/index
+  proposals: /home/studio/workbase/proposals
+  inbox: /home/studio/workbase/inbox
+  audit: /home/studio/workbase/audit.jsonl
+  rebuild_cmd: /home/studio/workbase/bin/rebuild-blog.sh
+
+admin:
+  listen: 127.0.0.1:8788
+  auth:
+    user: admin
+    # sha256 hex of admin password
+    pass_hash: REPLACE_WITH_SHA256_HEX_OF_ADMIN_PASSWORD
+
+auth:
+  clients:
+    - id: vps-client
+      # sha256 hex of bearer token
+      token_hash: REPLACE_WITH_SHA256_HEX_OF_BEARER_TOKEN
+      scopes:
+        - read:manifest
+        - read:context
+        - read:knowledge
+        - read:project
+        - read:registry
+        - read:proposal
+        - write:proposal
+        - read:inbox
+        - write:inbox
+        - ops:audit

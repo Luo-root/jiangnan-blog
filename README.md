@@ -1,6 +1,20 @@
-# 遇见江楠 · Obsidian 驱动静态博客
+# 遇见江楠 · Agent Workbase
 
-水墨国风 × 科技感的个人博客，内容用 Obsidian 写，构建产物纯静态、可部署到任何静态托管。
+> Blog as Agent Workbase / 博客即 Agent 工作基座
+
+水墨国风 × 科技感的个人博客，内容用 Obsidian 写，构建产物纯静态；同时以公网私密 MCP Server 作为 Agent 接入层，提供跨设备、跨 Agent 的一致上下文、知识检索、项目状态、Skill/MCP Registry 与受控写入。
+
+## 三层定位
+
+```text
+Obsidian Vault（D:\Data\工作台）  = 知识事实源
+公开博客（本仓库构建产物）        = 展示层
+公网私密 MCP Server（server/mcp/） = Agent 接入层
+```
+
+详细设计见 [`docs/agent-workbase-mcp-v0.1.md`](docs/agent-workbase-mcp-v0.1.md)。
+
+v0.1 检索层使用 JSON index + 正文扫描 + 可解释信号，**不引入向量数据库**。
 
 ## 技术栈
 

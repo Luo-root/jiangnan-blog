@@ -1,0 +1,3 @@
+# Live VPS config with real token/password hashes — keep local only.
+# Commit config.vps.example.yaml instead.
+config.vps.yaml
