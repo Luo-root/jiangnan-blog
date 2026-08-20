@@ -45,6 +45,14 @@ Copy-Item (Join-Path $PSScriptRoot 'jiangnan-workbase-mcp.service') (Join-Path $
 Copy-Item (Join-Path $PSScriptRoot 'post-receive-reindex.sh') (Join-Path $Stage 'post-receive-reindex.sh')
 Copy-Item (Join-Path $PSScriptRoot 'install-vps.sh') (Join-Path $Stage 'install-vps.sh')
 
+# Windows checkout may be CRLF; bash on VPS rejects `set -o pipefail\r`.
+foreach ($name in @('rebuild-blog.sh', 'post-receive-reindex.sh', 'install-vps.sh', 'jiangnan-workbase-mcp.service', 'config.yaml')) {
+  $p = Join-Path $Stage $name
+  $bytes = [System.IO.File]::ReadAllBytes($p)
+  $text = [System.Text.Encoding]::UTF8.GetString($bytes) -replace "`r`n", "`n" -replace "`r", "`n"
+  [System.IO.File]::WriteAllBytes($p, [System.Text.Encoding]::UTF8.GetBytes($text))
+}
+
 Write-Host '[1/3] upload stage -> /tmp/workbase-deploy'
 ssh -i $Key -o IdentitiesOnly=yes $Vps 'rm -rf /tmp/workbase-deploy; mkdir -p /tmp/workbase-deploy'
 scp -i $Key -o IdentitiesOnly=yes `
