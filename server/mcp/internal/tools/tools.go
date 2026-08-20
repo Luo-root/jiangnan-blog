@@ -9,8 +9,6 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -22,7 +20,6 @@ import (
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/inbox"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/index"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/proposal"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/sanitize"
 )
 
 // --------------------------------------------------------------------------
@@ -167,38 +164,54 @@ func Register(srv *server.MCPServer, d Deps) {
 	), r.handleMCPGet)
 
 	srv.AddTool(mcp.NewTool("proposal.create",
-		mcp.WithDescription("创建统一写入提案（需审批后才 apply）。"),
-		mcp.WithString("kind", mcp.Required(), mcp.Description("提案类型（如 context_update）。")),
-		mcp.WithString("reason", mcp.Required(), mcp.Description("写入理由。")),
-		mcp.WithString("content", mcp.Required(), mcp.Description("提案正文（Markdown）。")),
-		mcp.WithString("created_by", mcp.Description("创建者标识（默认 unknown）。")),
-		mcp.WithString("target_type", mcp.Description("目标类型。")),
-		mcp.WithString("target_id", mcp.Description("目标 id。")),
-		mcp.WithString("target_path", mcp.Description("目标路径。")),
-		mcp.WithString("op_type", mcp.Description("操作类型（如 patch_section）。")),
-		mcp.WithString("op_section", mcp.Description("操作的 section 名。")),
+		mcp.WithDescription("创建统一写入提案（需审批后才 apply）。不要传 kind / validation.checks。"),
+		mcp.WithString("expected_base", mcp.Description("刚读到的 vault HEAD。有传但对不上 → stale_base。")),
+		mcp.WithObject("target", mcp.Required(), mcp.Description("写入目标。"), mcp.Properties(map[string]any{
+			"type": map[string]any{"type": "string", "description": "note / context_pack / project / article / skill / mcp_server"},
+			"id":   map[string]any{"type": "string", "description": "已存在条目的对外 id"},
+			"path": map[string]any{"type": "string", "description": "vault 相对路径，入库前 ToSlash"},
+		})),
+		mcp.WithObject("operation", mcp.Required(), mcp.Description("写入操作。"), mcp.Properties(map[string]any{
+			"type":    map[string]any{"type": "string", "description": "create_file / append / append_section / patch_section / register_item"},
+			"section": map[string]any{"type": "string", "description": "append_section / patch_section 必填"},
+		})),
+		mcp.WithObject("payload", mcp.Required(), mcp.Description("写入内容。"), mcp.Properties(map[string]any{
+			"format":  map[string]any{"type": "string", "description": "固定 markdown"},
+			"content": map[string]any{"type": "string", "description": "内容"},
+		})),
+		mcp.WithString("reason", mcp.Description("创建原因，审计用。")),
+		mcp.WithObject("risk", mcp.Description("风险标注。"), mcp.Properties(map[string]any{
+			"level":   map[string]any{"type": "string", "description": "low / medium / high"},
+			"reasons": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		})),
 	), r.handleProposalCreate)
 
 	srv.AddTool(mcp.NewTool("proposal.list",
-		mcp.WithDescription("列出所有已创建的提案（摘要）：pending/approved/applied/rejected/conflict。"),
+		mcp.WithDescription("列出已创建的提案摘要。"),
+		mcp.WithString("status", mcp.Description("pending / approved / applied / rejected / conflict / all")),
+		mcp.WithString("created_by", mcp.Description("客户端 id 过滤")),
+		mcp.WithString("since", mcp.Description("RFC3339 创建时间下限")),
+		mcp.WithNumber("limit", mcp.Description("返回条数，默认 50")),
 	), r.handleProposalList)
 
 	srv.AddTool(mcp.NewTool("proposal.get",
-		mcp.WithDescription("读取单条提案的完整内容（含 diff/preview 和 receipt）。"),
+		mcp.WithDescription("读取单条提案的完整内容（含 diff 和 receipt）。"),
 		mcp.WithString("id", mcp.Required(), mcp.Description("提案 id。")),
 	), r.handleProposalGet)
 
 	srv.AddTool(mcp.NewTool("inbox.append",
-		mcp.WithDescription("创建一条待办（状态 pending），只存 VPS 私有区，不进本地 Vault。"),
+		mcp.WithDescription("创建一条待办（状态 pending），只存运行时私有区，不进 Vault。"),
 		mcp.WithString("content", mcp.Required(), mcp.Description("待办正文（Markdown）。")),
-		mcp.WithString("created_by", mcp.Description("创建者（默认 mcp_client）。")),
+		mcp.WithString("title", mcp.Description("简短标题。")),
+		mcp.WithArray("tags", mcp.Description("标签。"), mcp.WithStringItems()),
 	), r.handleInboxAppend)
 
 	srv.AddTool(mcp.NewTool("inbox.update",
 		mcp.WithDescription("编辑待办内容或变更状态（pending/reviewing/done/abandoned）。"),
 		mcp.WithString("id", mcp.Required(), mcp.Description("待办标识。")),
-		mcp.WithString("status", mcp.Description("新状态（pending|reviewing|done|abandoned），省略则只改内容。")),
+		mcp.WithString("status", mcp.Description("新状态，省略则只改内容。")),
 		mcp.WithString("content", mcp.Description("替换正文，省略则保留原内容。")),
+		mcp.WithString("title", mcp.Description("修改标题。")),
 	), r.handleInboxUpdate)
 
 	srv.AddTool(mcp.NewTool("inbox.list",
@@ -239,23 +252,6 @@ func errResult(msg string, err error) *mcp.CallToolResult {
 	return mcp.NewToolResultError(text)
 }
 
-func checkSensitive(texts ...string) error {
-	for _, t := range texts {
-		if hits := sanitize.FindSensitive(t); len(hits) > 0 {
-			return &SensitiveError{Patterns: hits}
-		}
-	}
-	return nil
-}
-
-type SensitiveError struct{ Patterns []string }
-
-func (e *SensitiveError) Error() string {
-	// 旧实现：命中当错误拒绝。契约已改成只 warning、不拒绝。
-	// 重构前不要把这行当规格。见 SCHEMA.md §21。
-	return "prohibited: 内容命中了敏感模式，请手动脱敏后重提：" + strings.Join(e.Patterns, "、")
-}
-
 func fmStr(fm map[string]interface{}, key string) string {
 	v, ok := fm[key]
 	if !ok {
@@ -268,219 +264,6 @@ func fmStr(fm map[string]interface{}, key string) string {
 		b, _ := json.Marshal(v)
 		return strings.Trim(string(b), `"`)
 	}
-}
-
-func (r *depsHolder) handleProposalCreate(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	kind := req.GetString("kind", "")
-	reason := req.GetString("reason", "")
-	content := req.GetString("content", "")
-	createdBy := req.GetString("created_by", "unknown")
-
-	if kind == "" || reason == "" || content == "" {
-		return mcp.NewToolResultError("required arguments: kind, reason, content"), nil
-	}
-	if err := checkSensitive(content, reason); err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	p := proposal.Proposal{
-		Kind:       kind,
-		Reason:     reason,
-		BaseCommit: baseCommit(r.d.GitDir),
-		Target: proposal.Target{
-			Type: req.GetString("target_type", ""),
-			ID:   req.GetString("target_id", ""),
-			Path: req.GetString("target_path", ""),
-		},
-		Operation: proposal.Operation{
-			Type:    req.GetString("op_type", ""),
-			Section: req.GetString("op_section", ""),
-		},
-		Payload: proposal.Payload{
-			Format:  "markdown",
-			Content: content,
-		},
-		CreatedBy: createdBy,
-	}
-	created, err := r.d.Proposal.Create(p)
-	if err != nil {
-		return errResult("create proposal", err), nil
-	}
-	return jsonResult(map[string]any{
-		"id":     created.ID,
-		"status": created.Status,
-	}), nil
-}
-
-func (r *depsHolder) handleProposalList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	props, err := r.d.Proposal.List()
-	if err != nil {
-		return errResult("list proposals", err), nil
-	}
-	type item struct {
-		ID        string `json:"id"`
-		Kind      string `json:"kind"`
-		Status    string `json:"status"`
-		Reason    string `json:"reason"`
-		CreatedBy string `json:"created_by"`
-		CreatedAt string `json:"created_at"`
-	}
-	out := make([]item, 0, len(props))
-	for _, p := range props {
-		out = append(out, item{
-			ID:        p.ID,
-			Kind:      p.Kind,
-			Status:    string(p.Status),
-			Reason:    p.Reason,
-			CreatedBy: p.CreatedBy,
-			CreatedAt: p.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		})
-	}
-	return jsonResult(map[string]any{"proposals": out}), nil
-}
-
-func (r *depsHolder) handleProposalGet(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id := req.GetString("id", "")
-	if id == "" {
-		return mcp.NewToolResultError("required argument id missing"), nil
-	}
-	p, err := r.d.Proposal.Get(id)
-	if err != nil {
-		return errResult("get proposal", err), nil
-	}
-	if p == nil {
-		return mcp.NewToolResultError("proposal not found: " + id), nil
-	}
-
-	// 生成 preview/diff（§9.13：proposal.get 返回 diff/preview 和 receipt）
-	result := map[string]any{
-		"id":          p.ID,
-		"kind":        p.Kind,
-		"status":      p.Status,
-		"reason":      p.Reason,
-		"created_by":  p.CreatedBy,
-		"created_at":  p.CreatedAt,
-		"base_commit": p.BaseCommit,
-		"target":      p.Target,
-		"operation":   p.Operation,
-		"payload":     p.Payload,
-		"preview":     proposalPreview(p, r.d.VaultRoot),
-	}
-	if p.Receipt != nil {
-		result["receipt"] = p.Receipt
-	}
-	return jsonResult(result), nil
-}
-
-// proposalPreview 生成 proposal 的 before/after 预览（不实际写入）。
-func proposalPreview(p *proposal.Proposal, vaultRoot string) map[string]any {
-	if p.Target.Path == "" {
-		return map[string]any{"mode": "create_file", "after": p.Payload.Content}
-	}
-	absPath := filepath.Join(vaultRoot, filepath.FromSlash(p.Target.Path))
-	existing, err := os.ReadFile(absPath)
-	if err != nil {
-		return map[string]any{"mode": p.Operation.Type, "before": "(file does not exist)", "after": p.Payload.Content}
-	}
-	before := string(existing)
-	preview := map[string]any{
-		"mode":   p.Operation.Type,
-		"before": truncatePreview(before, 500),
-	}
-	switch p.Operation.Type {
-	case "append":
-		preview["after"] = truncatePreview(before+"\n"+p.Payload.Content, 500)
-	case "append_section":
-		preview["after"] = truncatePreview(before+"\n"+p.Payload.Content, 500)
-	case "patch_section":
-		preview["after"] = p.Payload.Content
-		preview["section"] = p.Operation.Section
-	case "replace_frontmatter":
-		preview["after"] = p.Payload.Content
-		preview["section"] = "frontmatter"
-	default:
-		preview["after"] = truncatePreview(before+"\n"+p.Payload.Content, 500)
-	}
-	return preview
-}
-
-func truncatePreview(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
-}
-
-func (r *depsHolder) handleInboxAppend(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	content := req.GetString("content", "")
-	createdBy := req.GetString("created_by", "mcp_client")
-	if content == "" {
-		return mcp.NewToolResultError("required argument content missing"), nil
-	}
-	if err := checkSensitive(content); err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	id, err := r.d.Inbox.Append(createdBy, content)
-	if err != nil {
-		return errResult("inbox append", err), nil
-	}
-	return jsonResult(map[string]any{"id": id, "status": "pending"}), nil
-}
-
-func (r *depsHolder) handleInboxUpdate(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id := req.GetString("id", "")
-	if id == "" {
-		return mcp.NewToolResultError("required argument id missing"), nil
-	}
-	status := inbox.Status(req.GetString("status", ""))
-	content := req.GetString("content", "")
-	if content != "" {
-		if err := checkSensitive(content); err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-	}
-	if err := r.d.Inbox.Update(id, status, content); err != nil {
-		return errResult("inbox update", err), nil
-	}
-	return jsonResult(map[string]any{"id": id, "status": string(status)}), nil
-}
-
-func (r *depsHolder) handleInboxList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	items, err := r.d.Inbox.List()
-	if err != nil {
-		return errResult("inbox list", err), nil
-	}
-	out := make([]map[string]any, 0, len(items))
-	for _, it := range items {
-		out = append(out, map[string]any{
-			"id":         it.ID,
-			"created_at": it.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-			"updated_at": it.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
-			"created_by": it.CreatedBy,
-			"summary":    it.Summary,
-			"status":     it.Status,
-		})
-	}
-	return jsonResult(map[string]any{"items": out}), nil
-}
-
-func (r *depsHolder) handleInboxGet(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id := req.GetString("id", "")
-	if id == "" {
-		return mcp.NewToolResultError("required argument id missing"), nil
-	}
-	item, err := r.d.Inbox.Get(id)
-	if err != nil {
-		return errResult("inbox get", err), nil
-	}
-	if item == nil {
-		return mcp.NewToolResultError("inbox item not found: " + id), nil
-	}
-	return jsonResult(map[string]any{
-		"id":      item.ID,
-		"status":  item.Status,
-		"content": item.Content,
-	}), nil
 }
 
 func (r *depsHolder) handleAuditListRecent(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,7 +17,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Status 是 proposal 状态机。
 type Status string
 
 const (
@@ -27,7 +27,6 @@ const (
 	StatusConflict Status = "conflict"
 )
 
-// Proposal 是一条写入请求。
 type Proposal struct {
 	ID     string `json:"id" yaml:"id"`
 	Kind   string `json:"kind" yaml:"kind"`
@@ -38,9 +37,11 @@ type Proposal struct {
 	CreatedAt  time.Time `json:"created_at" yaml:"created_at"`
 	BaseCommit string    `json:"base_commit,omitempty" yaml:"base_commit,omitempty"`
 
-	Target    Target    `json:"target" yaml:"target"`
-	Operation Operation `json:"operation" yaml:"operation"`
-	Payload   Payload   `json:"payload" yaml:"payload"`
+	Target     Target     `json:"target" yaml:"target"`
+	Operation  Operation  `json:"operation" yaml:"operation"`
+	Payload    Payload    `json:"payload" yaml:"payload"`
+	Risk       Risk       `json:"risk,omitempty" yaml:"risk,omitempty"`
+	Validation Validation `json:"validation,omitempty" yaml:"validation,omitempty"`
 
 	Receipt *Receipt `json:"receipt,omitempty" yaml:"receipt,omitempty"`
 }
@@ -61,16 +62,32 @@ type Payload struct {
 	Content string `json:"content" yaml:"content"`
 }
 
-// Receipt 是 apply 的结果（applied 需要 git commit + hash 校验）。
-type Receipt struct {
-	Status     Status    `json:"status" yaml:"status"`
-	AppliedAt  time.Time `json:"applied_at,omitempty" yaml:"applied_at,omitempty"`
-	Commit     string    `json:"commit,omitempty" yaml:"commit,omitempty"`
-	ContentSHA string    `json:"content_sha256,omitempty" yaml:"content_sha256,omitempty"`
-	Replayed   bool      `json:"replayed" yaml:"replayed"`
+type Risk struct {
+	Level   string   `json:"level,omitempty" yaml:"level,omitempty"`
+	Reasons []string `json:"reasons,omitempty" yaml:"reasons,omitempty"`
 }
 
-// Store 管理 proposal 文件。
+type Validation struct {
+	OK       bool     `json:"ok" yaml:"ok"`
+	Checks   []string `json:"checks,omitempty" yaml:"checks,omitempty"`
+	Warnings []string `json:"warnings,omitempty" yaml:"warnings,omitempty"`
+}
+
+type Receipt struct {
+	Status          Status           `json:"status" yaml:"status"`
+	AppliedAt       time.Time        `json:"applied_at,omitempty" yaml:"applied_at,omitempty"`
+	Commit          string           `json:"commit,omitempty" yaml:"commit,omitempty"`
+	ContentSHA      string           `json:"content_sha256,omitempty" yaml:"content_sha256,omitempty"`
+	BaseCommit      string           `json:"base_commit,omitempty" yaml:"base_commit,omitempty"`
+	MergeStrategy   string           `json:"merge_strategy,omitempty" yaml:"merge_strategy,omitempty"`
+	Replayed        bool             `json:"replayed" yaml:"replayed"`
+	ConflictRegions []ConflictRegion `json:"conflict_regions,omitempty" yaml:"conflict_regions,omitempty"`
+}
+
+type ConflictRegion struct {
+	Excerpt string `json:"excerpt,omitempty" yaml:"excerpt,omitempty"`
+}
+
 type Store struct {
 	dir string
 	mu  sync.Mutex
@@ -83,15 +100,17 @@ func New(dir string) (*Store, error) {
 	return &Store{dir: dir}, nil
 }
 
-// Create 新建一条 pending proposal。
 func (s *Store) Create(p Proposal) (*Proposal, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	now := time.Now()
-	p.ID = "prop_" + now.Format("20060102_150405")
+	p.ID = nextIDLocked(s.dir, now)
 	p.Status = StatusPending
 	p.CreatedAt = now
+	if p.Kind == "" {
+		p.Kind = p.Target.Type
+	}
 
 	path := filepath.Join(s.dir, p.ID+".md")
 	if err := writeProposal(path, p); err != nil {
@@ -100,7 +119,20 @@ func (s *Store) Create(p Proposal) (*Proposal, error) {
 	return &p, nil
 }
 
-// List 返回所有 proposal 摘要。
+func nextIDLocked(dir string, now time.Time) string {
+	prefix := "prop_" + now.Format("20060102") + "_"
+	max := 0
+	files, _ := filepath.Glob(filepath.Join(dir, prefix+"*.md"))
+	for _, f := range files {
+		nstr := strings.TrimPrefix(strings.TrimSuffix(filepath.Base(f), ".md"), prefix)
+		n, err := strconv.Atoi(nstr)
+		if err == nil && n > max {
+			max = n
+		}
+	}
+	return fmt.Sprintf("%s%03d", prefix, max+1)
+}
+
 func (s *Store) List() ([]Proposal, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -120,15 +152,12 @@ func (s *Store) List() ([]Proposal, error) {
 	return out, nil
 }
 
-// Get 读取单条 proposal。
 func (s *Store) Get(id string) (*Proposal, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return readProposal(filepath.Join(s.dir, id+".md"))
 }
 
-// Update 修改一条 pending proposal 的可编辑字段（reason / target / operation / payload）。
-// 已审批/拒绝/应用的 proposal 不允许再编辑。
 func (s *Store) Update(id string, patch ProposalPatch) (*Proposal, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -138,8 +167,8 @@ func (s *Store) Update(id string, patch ProposalPatch) (*Proposal, error) {
 	if err != nil {
 		return nil, err
 	}
-	if p.Status != StatusPending {
-		return nil, fmt.Errorf("proposal %s is %s, only pending proposal can be edited", id, p.Status)
+	if p.Status != StatusPending && p.Status != StatusConflict {
+		return nil, fmt.Errorf("proposal %s is %s, only pending or conflict proposal can be edited", id, p.Status)
 	}
 
 	if patch.Reason != nil {
@@ -154,6 +183,9 @@ func (s *Store) Update(id string, patch ProposalPatch) (*Proposal, error) {
 	if patch.Payload != nil {
 		p.Payload = *patch.Payload
 	}
+	if patch.BaseCommit != nil {
+		p.BaseCommit = *patch.BaseCommit
+	}
 
 	if err := writeProposal(path, *p); err != nil {
 		return nil, err
@@ -161,18 +193,14 @@ func (s *Store) Update(id string, patch ProposalPatch) (*Proposal, error) {
 	return p, nil
 }
 
-// ProposalPatch 是需要更新的字段（nil 表示不修改）。
 type ProposalPatch struct {
-	Reason    *string    `json:"reason,omitempty"`
-	Target    *Target    `json:"target,omitempty"`
-	Operation *Operation `json:"operation,omitempty"`
-	Payload   *Payload   `json:"payload,omitempty"`
+	Reason     *string    `json:"reason,omitempty"`
+	Target     *Target    `json:"target,omitempty"`
+	Operation  *Operation `json:"operation,omitempty"`
+	Payload    *Payload   `json:"payload,omitempty"`
+	BaseCommit *string    `json:"base_commit,omitempty"`
 }
 
-// UpdateStatus 更新 Proposal 状态。状态转换规则：
-//
-//	pending → approved / rejected
-//	approved → applied / conflict
 func (s *Store) UpdateStatus(id string, status Status) (*Proposal, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -184,7 +212,11 @@ func (s *Store) UpdateStatus(id string, status Status) (*Proposal, error) {
 	}
 
 	switch status {
-	case StatusApproved, StatusRejected:
+	case StatusApproved:
+		if p.Status != StatusPending && p.Status != StatusConflict {
+			return nil, fmt.Errorf("proposal %s is %s, only pending or conflict proposal can be approved", id, p.Status)
+		}
+	case StatusRejected:
 		if p.Status != StatusPending {
 			return nil, fmt.Errorf("proposal %s is %s, only pending proposal can be reviewed", id, p.Status)
 		}
@@ -203,7 +235,6 @@ func (s *Store) UpdateStatus(id string, status Status) (*Proposal, error) {
 	return p, nil
 }
 
-// SetReceipt 写入 receipt 到 proposal 文件。
 func (s *Store) SetReceipt(id string, r *Receipt) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -215,6 +246,12 @@ func (s *Store) SetReceipt(id string, r *Receipt) error {
 	}
 	p.Receipt = r
 	return writeProposal(path, *p)
+}
+
+func (s *Store) Save(p *Proposal) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return writeProposal(filepath.Join(s.dir, p.ID+".md"), *p)
 }
 
 func writeProposal(path string, p Proposal) error {

@@ -148,7 +148,7 @@ func (h *Handler) createInbox(w http.ResponseWriter, r *http.Request) {
 	if req.CreatedBy == "" {
 		req.CreatedBy = "webui"
 	}
-	id, err := h.Inbox.Append(req.CreatedBy, req.Content)
+	id, err := h.Inbox.Append(req.CreatedBy, req.Content, "", nil)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -176,7 +176,7 @@ func (h *Handler) updateInbox(w http.ResponseWriter, r *http.Request, id string)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
-	if err := h.Inbox.Update(id, inbox.Status(req.Status), req.Content); err != nil {
+	if err := h.Inbox.Update(id, inbox.Status(req.Status), req.Content, "", nil); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -232,11 +232,12 @@ func (h *Handler) getProposal(w http.ResponseWriter, r *http.Request, id string)
 }
 
 type reviewReq struct {
-	Status string `json:"status"`
+	Status         string `json:"status"`
+	KeepBaseCommit bool   `json:"keep_base_commit"`
 }
 
-// updateProposal 编辑 proposal 字段（仅 pending 状态可编辑）。
-// 设计文档 §21.5：支持「编辑后同意」。
+// updateProposal 编辑 proposal 字段（pending / conflict 可编辑）。
+// 设计文档 §21.5：支持「编辑后同意」和 conflict 救回。
 func (h *Handler) updateProposal(w http.ResponseWriter, r *http.Request, id string) {
 	var patch proposal.ProposalPatch
 	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
@@ -260,7 +261,31 @@ func (h *Handler) reviewProposal(w http.ResponseWriter, r *http.Request, id stri
 	}
 	status := proposal.Status(req.Status)
 
-	// 先标记 approved/rejected
+	cur, err := h.Proposal.Get(id)
+	if err != nil {
+		writeJSON(w, proposalErrorCode(err), map[string]string{"error": err.Error()})
+		return
+	}
+	if status == proposal.StatusApproved && cur.Status == proposal.StatusApplied {
+		if cur.Receipt != nil {
+			r := *cur.Receipt
+			r.Replayed = true
+			_ = h.Proposal.SetReceipt(id, &r)
+			cur.Receipt = &r
+		}
+		writeJSON(w, http.StatusOK, cur)
+		return
+	}
+	if status == proposal.StatusApproved && cur.Status == proposal.StatusConflict && !req.KeepBaseCommit {
+		head := apply.Head(h.GitDir)
+		if head != "" {
+			base := head
+			if _, err := h.Proposal.Update(id, proposal.ProposalPatch{BaseCommit: &base}); err != nil {
+				log.Printf("refresh base_commit for %s: %v", id, err)
+			}
+		}
+	}
+
 	p, err := h.Proposal.UpdateStatus(id, status)
 	if err != nil {
 		code := proposalErrorCode(err)
@@ -268,53 +293,34 @@ func (h *Handler) reviewProposal(w http.ResponseWriter, r *http.Request, id stri
 		return
 	}
 
-	// 批准 → 执行 apply（§17.3：同意 → base_commit check → apply → git commit → reindex）
 	if status == proposal.StatusApproved {
-		// base_commit 校验（§17.4：base commit 不是最新 → stale_base → conflict）
-		if h.GitDir != "" && p.BaseCommit != "" {
-			current := gitHead(h.GitDir)
-			if current != "" && current != p.BaseCommit {
-				log.Printf("proposal %s base_commit stale: proposal=%s current=%s", id, p.BaseCommit, current)
-				cr := &proposal.Receipt{Status: proposal.StatusConflict, AppliedAt: time.Now()}
-				_ = h.Proposal.SetReceipt(id, cr)
-				p, _ = h.Proposal.UpdateStatus(id, proposal.StatusConflict)
-				writeJSON(w, http.StatusOK, p)
-				return
-			}
-		}
-
-		receipt, applyErr := apply.Apply(p, apply.Deps{VaultRoot: h.VaultRoot})
-		if applyErr != nil {
-			log.Printf("apply proposal %s failed: %v", id, applyErr)
-			cr := &proposal.Receipt{Status: proposal.StatusConflict, AppliedAt: time.Now()}
-			_ = h.Proposal.SetReceipt(id, cr)
-			p, _ = h.Proposal.UpdateStatus(id, proposal.StatusConflict)
-			log.Printf("proposal %s → conflict", id)
+		if p.Receipt != nil && p.Receipt.Status == proposal.StatusApplied {
+			r := *p.Receipt
+			r.Replayed = true
+			_ = h.Proposal.SetReceipt(id, &r)
 			writeJSON(w, http.StatusOK, p)
 			return
 		}
 
-		// git commit（如果 vault 是 git 仓库）
-		var commitHash string
-		if h.GitDir != "" {
-			commitHash = gitCommitGetHash(h.GitDir, h.VaultRoot, p.Target.Path, id)
-			if commitHash == "" {
-				// git commit 失败 → conflict（不是 applied）
-				log.Printf("proposal %s git commit failed, marking conflict", id)
-				cr := &proposal.Receipt{Status: proposal.StatusConflict, AppliedAt: time.Now()}
-				_ = h.Proposal.SetReceipt(id, cr)
-				p, _ = h.Proposal.UpdateStatus(id, proposal.StatusConflict)
-				writeJSON(w, http.StatusOK, p)
-				return
+		receipt, applyErr := apply.Apply(p, apply.Deps{
+			VaultRoot:  h.VaultRoot,
+			GitDir:     h.GitDir,
+			VisDefault: h.VisDefault,
+		})
+		if applyErr != nil || receipt.Status == proposal.StatusConflict {
+			if receipt == nil {
+				receipt = &proposal.Receipt{Status: proposal.StatusConflict, AppliedAt: time.Now(), BaseCommit: p.BaseCommit}
 			}
-			receipt.Commit = commitHash
+			log.Printf("apply proposal %s failed: %v", id, applyErr)
+			_ = h.Proposal.SetReceipt(id, receipt)
+			p, _ = h.Proposal.UpdateStatus(id, proposal.StatusConflict)
+			writeJSON(w, http.StatusOK, p)
+			return
 		}
 
-		// apply 成功 → applied + receipt（含 commit hash）
 		_ = h.Proposal.SetReceipt(id, receipt)
 		p, _ = h.Proposal.UpdateStatus(id, proposal.StatusApplied)
 
-		// 触发 reindex（§18.3：apply 后手动补触发）
 		if h.Index != nil {
 			if err := h.Index.Rebuild(h.VaultRoot, h.ExcludedSections, h.VisDefault); err != nil {
 				log.Printf("reindex after apply %s failed: %v", id, err)
@@ -322,8 +328,6 @@ func (h *Handler) reviewProposal(w http.ResponseWriter, r *http.Request, id stri
 				log.Printf("reindex after apply %s: %d notes", id, len(h.Index.Notes()))
 			}
 		}
-
-		// 触发博客 rebuild（可选；VPS 上配置 rebuild_cmd）
 		if h.RebuildCmd != "" {
 			cmd := exec.Command("sh", "-c", h.RebuildCmd)
 			if out, err := cmd.CombinedOutput(); err != nil {
@@ -332,47 +336,10 @@ func (h *Handler) reviewProposal(w http.ResponseWriter, r *http.Request, id stri
 				log.Printf("rebuild after apply %s ok", id)
 			}
 		}
-
-		log.Printf("proposal %s → applied, sha256=%s, commit=%s", id, receipt.ContentSHA, commitHash)
+		log.Printf("proposal %s → applied, sha256=%s, commit=%s", id, receipt.ContentSHA, receipt.Commit)
 	}
 
 	writeJSON(w, http.StatusOK, p)
-}
-
-// gitHead returns the current HEAD commit hash.
-func gitHead(gitDir string) string {
-	cmd := exec.Command("git", "--git-dir="+gitDir, "rev-parse", "HEAD")
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
-}
-
-// gitCommitGetHash 将 apply 结果提交到 vault.git，返回 commit hash。失败返回 ""。
-func gitCommitGetHash(gitDir, workTree, targetRel, proposalID string) string {
-	msg := "workbase: apply " + proposalID
-	cmd := exec.Command("git",
-		"--git-dir="+gitDir,
-		"--work-tree="+workTree,
-		"add", targetRel,
-	)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("git add %s: %v — %s", targetRel, err, out)
-		return ""
-	}
-	cmd = exec.Command("git",
-		"--git-dir="+gitDir,
-		"--work-tree="+workTree,
-		"commit", "-m", msg,
-	)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("git commit: %v — %s", err, out)
-		return ""
-	}
-	hash := gitHead(gitDir)
-	log.Printf("git commit: %s → %s (%s)", proposalID, msg, hash)
-	return hash
 }
 
 // proposalErrorCode 将 proposal 层的错误映射为 HTTP 状态码。
@@ -381,7 +348,7 @@ func proposalErrorCode(err error) int {
 	switch {
 	case strings.Contains(msg, "invalid review status"):
 		return http.StatusBadRequest
-	case strings.Contains(msg, "only pending proposal"):
+	case strings.Contains(msg, "only pending") || strings.Contains(msg, "only pending or conflict"):
 		return http.StatusConflict
 	case strings.Contains(msg, "only approved proposal"):
 		return http.StatusConflict

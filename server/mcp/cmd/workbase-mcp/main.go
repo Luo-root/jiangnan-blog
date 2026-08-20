@@ -43,7 +43,7 @@ func main() {
 		}
 	}
 
-	inboxStore, err := inbox.New(cfg.InboxDir())
+	inboxStore, err := inbox.New(cfg.InboxDir(), cfg.Inbox.RetentionDays)
 	if err != nil {
 		log.Fatalf("init inbox: %v", err)
 	}
