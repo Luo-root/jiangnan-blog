@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,13 +29,13 @@ type Handler struct {
 	Inbox            *inbox.Store
 	Proposal         *proposal.Store
 	Index            *index.Store
-	AdminAuth        *auth.Auth
-	AdminUser        string   // admin 用户名（basic auth）
-	AdminPassHash    string   // admin 密码 SHA-256 哈希
-	VaultRoot        string   // 内容事实源根目录（apply 用）
-	GitDir           string   // vault.git 路径（git commit 用，可选）
-	ExcludedSections []string // 索引排除目录（reindex 用）
-	RebuildCmd       string   // apply 后可选博客 rebuild 命令（空则跳过）
+	Tokens           *auth.Store
+	AdminUser        string
+	AdminPassHash    string
+	VaultRoot        string
+	GitDir           string
+	ExcludedSections []string
+	RebuildCmd       string
 }
 
 // ServeHTTP 路由分发。
@@ -82,8 +83,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.reviewProposal(w, r, strings.TrimPrefix(path, "api/proposals/"))
 	case strings.HasPrefix(path, "api/proposals/") && r.Method == http.MethodPatch:
 		h.updateProposal(w, r, strings.TrimPrefix(path, "api/proposals/"))
+	case path == "api/auth_tokens" && r.Method == http.MethodGet:
+		h.listTokens(w, r)
+	case path == "api/auth_tokens" && r.Method == http.MethodPost:
+		h.createToken(w, r)
+	case strings.HasSuffix(path, "/revoke") && strings.HasPrefix(path, "api/auth_tokens/") && r.Method == http.MethodPost:
+		h.revokeToken(w, r, strings.TrimSuffix(strings.TrimPrefix(path, "api/auth_tokens/"), "/revoke"))
+	case strings.HasSuffix(path, "/rotate") && strings.HasPrefix(path, "api/auth_tokens/") && r.Method == http.MethodPost:
+		h.rotateToken(w, r, strings.TrimSuffix(strings.TrimPrefix(path, "api/auth_tokens/"), "/rotate"))
 	default:
-		// fallback to static
 		h.serveStatic(w, r)
 	}
 }
@@ -398,4 +406,105 @@ func (h *Handler) checkAdminAuth(r *http.Request) bool {
 	sum := sha256.Sum256([]byte(pass))
 	hash := hex.EncodeToString(sum[:])
 	return hash == h.AdminPassHash
+}
+
+type createTokenReq struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Scopes      []string `json:"scopes"`
+}
+
+func (h *Handler) listTokens(w http.ResponseWriter, r *http.Request) {
+	if h.Tokens == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "token store not configured"})
+		return
+	}
+	items, err := h.Tokens.List()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if items == nil {
+		items = []auth.Token{}
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
+	if h.Tokens == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "token store not configured"})
+		return
+	}
+	var req createTokenReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	plaintext, tok, err := h.Tokens.Create(req.Name, req.Description, h.AdminUser, req.Scopes)
+	if err != nil {
+		code := http.StatusBadRequest
+		if err == auth.ErrNameTaken {
+			code = http.StatusConflict
+		}
+		writeJSON(w, code, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"id":          tok.ID,
+		"name":        tok.Name,
+		"scopes":      tok.Scopes,
+		"status":      tok.Status,
+		"created_at":  tok.CreatedAt,
+		"token":       plaintext,
+		"description": tok.Description,
+	})
+}
+
+func (h *Handler) rotateToken(w http.ResponseWriter, r *http.Request, idStr string) {
+	if h.Tokens == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "token store not configured"})
+		return
+	}
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	plaintext, tok, err := h.Tokens.Rotate(id)
+	if err != nil {
+		code := http.StatusBadRequest
+		if err == auth.ErrNotFound {
+			code = http.StatusNotFound
+		}
+		writeJSON(w, code, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":     tok.ID,
+		"name":   tok.Name,
+		"scopes": tok.Scopes,
+		"status": tok.Status,
+		"token":  plaintext,
+	})
+}
+
+func (h *Handler) revokeToken(w http.ResponseWriter, r *http.Request, idStr string) {
+	if h.Tokens == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "token store not configured"})
+		return
+	}
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	if err := h.Tokens.Revoke(id); err != nil {
+		code := http.StatusBadRequest
+		if err == auth.ErrNotFound {
+			code = http.StatusNotFound
+		}
+		writeJSON(w, code, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 }

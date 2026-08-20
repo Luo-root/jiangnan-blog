@@ -1,12 +1,4 @@
 // workbase-mcp 是「遇见江楠 · Agent Workbase」的 MCP 服务端 + WebUI 后台。
-//
-// v0.1 范围：
-//   - 从 Obsidian Vault 构建 JSON 索引（notes/projects/skills/mcps/context）
-//   - inbox 待办管理（append/update/list/get + 7 天清理）
-//   - proposal 写入请求（create/list/get）
-//   - admin WebUI（看板式 inbox + 热度可视化）
-//   - 访问计数（access_count）
-//   - MCP Streamable HTTP 接入（127.0.0.1:8787/mcp）+ Bearer/scope/audit 中间件
 package main
 
 import (
@@ -18,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -35,14 +26,10 @@ import (
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/tools"
 )
 
-// excludedSections 是 MCP 索引器排除的目录。
-//
-// 注意与 vite.config.ts 的差异：博客构建需要排除 Workbase/（不作为公开栏目），
-// 但 MCP 索引器必须扫描 Workbase/（skill/mcp/context registry 的来源）。
 var excludedSections = []string{".obsidian", ".trash"}
 
 func main() {
-	cfgPath := flag.String("config", "", "config.yaml 路径（可选）")
+	cfgPath := flag.String("config", "", "config.yaml 路径（默认 ./config.yaml）")
 	reindexOnly := flag.Bool("reindex", false, "仅重建索引后退出")
 	flag.Parse()
 
@@ -50,28 +37,32 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
+	for _, dir := range cfg.RuntimeDirs() {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			log.Fatalf("mkdir runtime %s: %v", dir, err)
+		}
+	}
 
-	// 1. inbox / proposal / audit store
-	inboxStore, err := inbox.New(cfg.Workbase.Inbox)
+	inboxStore, err := inbox.New(cfg.InboxDir())
 	if err != nil {
 		log.Fatalf("init inbox: %v", err)
 	}
 	defer inboxStore.Close()
 
-	proposalStore, err := proposal.New(cfg.Workbase.Proposals)
+	proposalStore, err := proposal.New(cfg.ProposalsDir())
 	if err != nil {
 		log.Fatalf("init proposal: %v", err)
 	}
 
-	auditStore := audit.New(cfg.Workbase.Audit, 2000)
+	auditStore := audit.New(cfg.AuditFile(), 2000)
+	idx := index.New(cfg.IndexFile())
 
-	// 2. 索引 + 访问计数
-	idx := index.New(cfg.Workbase.Index + "/notes.json")
+	tokenStore, err := auth.Open(cfg.AuthDB(), cfg.Auth.GracePeriodHours)
+	if err != nil {
+		log.Fatalf("init auth: %v", err)
+	}
+	defer tokenStore.Close()
 
-	// 3. 鉴权（admin 后台 + MCP）
-	mcpAuth := auth.New(cfg.Auth)
-
-	// 4. 重建索引
 	log.Printf("rebuilding index from vault: %s", cfg.Vault.Root)
 	if err := idx.Rebuild(cfg.Vault.Root, excludedSections); err != nil {
 		log.Printf("WARN: rebuild index: %v", err)
@@ -86,54 +77,33 @@ func main() {
 		return
 	}
 
-	// 5. MCP server（Streamable HTTP）
 	mcpSrv := server.NewMCPServer(
 		"workbase-mcp",
-		"0.1.0",
+		config.IdentityVersion,
 		server.WithToolCapabilities(true),
 		server.WithRecovery(),
 	)
 	tools.Register(mcpSrv, tools.Deps{
-		Idx:       idx,
-		Inbox:     inboxStore,
-		Proposal:  proposalStore,
-		Audit:     auditStore,
-		MCPAuth:   mcpAuth,
-		VaultRoot: cfg.Vault.Root,
-		GitDir:    cfg.Vault.GitDir,
+		Idx:          idx,
+		Inbox:        inboxStore,
+		Proposal:     proposalStore,
+		Audit:        auditStore,
+		Cfg:          cfg,
+		VaultRoot:    cfg.Vault.Root,
+		WorkbaseRoot: cfg.Workbase.Root,
+		GitDir:       cfg.Vault.GitDir,
 	})
-	mcpSrv.Use(authAuditMiddleware(mcpAuth, auditStore))
+	mcpSrv.Use(authAuditMiddleware(tokenStore, auditStore))
 
 	mcpHTTP := server.NewStreamableHTTPServer(
 		mcpSrv,
 		server.WithEndpointPath("/mcp"),
-		// 本地直连 + Caddy 反代（保留 Host 头）场景都需要放行
 		server.WithDisableLocalhostProtection(true),
 	)
 
-	// HTTP 层 Bearer 鉴权（§23.1 #1：未带 token → 401）+ /internal/reindex
 	mcpMux := http.NewServeMux()
-	mcpMux.Handle("/mcp", bearerHTTPAuth(mcpAuth, mcpHTTP))
-	mcpMux.HandleFunc("/internal/reindex", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost && r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		// 仅本机可触发
-		if host := r.RemoteAddr; !(strings.HasPrefix(host, "127.0.0.1") || strings.HasPrefix(host, "[::1]")) {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-		log.Printf("reindex triggered by %s", r.RemoteAddr)
-		if err := idx.Rebuild(cfg.Vault.Root, excludedSections); err != nil {
-			log.Printf("reindex failed: %v", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"ok":true,"notes":%d,"projects":%d,"skills":%d,"mcps":%d,"context":%d}`,
-			len(idx.Notes()), len(idx.Projects()), len(idx.Skills()), len(idx.MCPServers()), len(idx.ContextPacks()))
-	})
+	mcpMux.Handle("/mcp", bearerHTTPAuth(tokenStore, mcpHTTP))
+	mcpMux.HandleFunc("/internal/reindex", handleInternalReindex(cfg, idx))
 	mcpHTTPServer := &http.Server{Addr: cfg.Server.Listen, Handler: mcpMux}
 
 	go func() {
@@ -143,8 +113,18 @@ func main() {
 		}
 	}()
 
-	// 6. admin WebUI 后台
-	adminHandler := &admin.Handler{Inbox: inboxStore, Proposal: proposalStore, Index: idx, AdminAuth: mcpAuth, AdminUser: cfg.Admin.Auth.User, AdminPassHash: cfg.Admin.Auth.PassHash, VaultRoot: cfg.Vault.Root, GitDir: cfg.Vault.GitDir, ExcludedSections: excludedSections, RebuildCmd: cfg.Workbase.RebuildCmd}
+	adminHandler := &admin.Handler{
+		Inbox:            inboxStore,
+		Proposal:         proposalStore,
+		Index:            idx,
+		Tokens:           tokenStore,
+		AdminUser:        cfg.AdminAuth.User,
+		AdminPassHash:    cfg.AdminAuth.PassHash,
+		VaultRoot:        cfg.Vault.Root,
+		GitDir:           cfg.Vault.GitDir,
+		ExcludedSections: excludedSections,
+		RebuildCmd:       cfg.Workbase.RebuildCmd,
+	}
 	adminSrv := &http.Server{Addr: cfg.Admin.Listen, Handler: adminHandler}
 
 	go func() {
@@ -154,15 +134,8 @@ func main() {
 		}
 	}()
 
-	log.Printf("workbase-mcp started. Vault=%s Inbox=%s Proposals=%s Audit=%s",
-		cfg.Vault.Root, cfg.Workbase.Inbox, cfg.Workbase.Proposals, cfg.Workbase.Audit)
-	if mcpAuth.HasClient() {
-		log.Printf("MCP auth: %d client(s) configured, bearer token + scope enforced", len(cfg.Auth.Clients))
-	} else {
-		log.Printf("MCP auth: DISABLED (no clients configured) — 仅限本地开发")
-	}
+	log.Printf("workbase-mcp started. Vault=%s Runtime=%s", cfg.Vault.Root, cfg.Workbase.Runtime)
 
-	// 7. 优雅退出，保存访问计数
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	<-ctx.Done()
@@ -178,48 +151,59 @@ func main() {
 	log.Println("bye")
 }
 
-// bearerHTTPAuth 在 HTTP 层强制 Bearer Token（§23.1 #1：未带 token → 401）。
-// 未配置 client 时（开发模式）直接放行。
-func bearerHTTPAuth(a *auth.Auth, next http.Handler) http.Handler {
+func handleInternalReindex(cfg *config.Config, idx *index.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost && r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		log.Printf("reindex triggered")
+		if err := idx.Rebuild(cfg.Vault.Root, excludedSections); err != nil {
+			log.Printf("reindex failed: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"ok":true,"notes":%d,"projects":%d,"skills":%d,"mcps":%d,"context":%d}`,
+			len(idx.Notes()), len(idx.Projects()), len(idx.Skills()), len(idx.MCPServers()), len(idx.ContextPacks()))
+	}
+}
+
+func bearerHTTPAuth(a *auth.Store, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// CORS preflight 不带 Authorization，直接放行
 		if r.Method == http.MethodOptions {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if a.HasClient() {
-			if _, ok := a.ClientFromRequest(r); !ok {
-				w.Header().Set("WWW-Authenticate", `Bearer realm="workbase-mcp"`)
-				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-				return
-			}
+		ac, err := a.AuthenticateHeader(r.Header)
+		if err != nil {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="workbase-mcp"`)
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
 		}
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(auth.WithAuth(r.Context(), ac)))
 	})
 }
 
-// authAuditMiddleware 做 Bearer Token + scope 校验，并记录审计。
-//
-// 未配置 client 时（开发模式）跳过鉴权，只记录审计。
-func authAuditMiddleware(a *auth.Auth, ad *audit.Store) server.ToolHandlerMiddleware {
+func authAuditMiddleware(a *auth.Store, ad *audit.Store) server.ToolHandlerMiddleware {
 	return func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 		return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			toolName := req.Params.Name
 			scope := tools.RequiredScope(toolName)
-			clientID := ""
 
-			if a.HasClient() {
-				client, ok := a.ClientFromHeader(req.Header)
-				if !ok {
+			ac, ok := auth.FromContext(ctx)
+			if !ok {
+				var err error
+				ac, err = a.AuthenticateHeader(req.Header)
+				if err != nil {
 					return mcp.NewToolResultError("unauthorized: missing or invalid bearer token"), nil
 				}
-				if scope != "" && !auth.HasScope(client, scope) {
-					return mcp.NewToolResultErrorf("forbidden: tool %q requires scope %q", toolName, scope), nil
-				}
-				clientID = client.ID
+				ctx = auth.WithAuth(ctx, ac)
+			}
+			if scope != "" && !ac.HasScope(scope) {
+				return mcp.NewToolResultErrorf("forbidden: tool %q requires scope %q", toolName, scope), nil
 			}
 
-			// 审计：op + scope + 目标 id + 内容哈希（不含正文）
 			raw := string(req.Params.RawArguments)
 			if raw == "" {
 				if b, err := json.Marshal(req.Params.Arguments); err == nil {
@@ -230,8 +214,7 @@ func authAuditMiddleware(a *auth.Auth, ad *audit.Store) server.ToolHandlerMiddle
 			if targetID == "" {
 				targetID = req.GetString("query", "")
 			}
-			ad.Append(toolName, scope, clientID, targetID, raw)
-
+			ad.Append(toolName, scope, ac.ClientID, targetID, raw)
 			return next(ctx, req)
 		}
 	}

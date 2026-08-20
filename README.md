@@ -14,7 +14,7 @@ Obsidian Vault（D:\Data\工作台）  = 知识事实源
 
 详细设计见 [`docs/agent-workbase-mcp-v0.1.md`](docs/agent-workbase-mcp-v0.1.md)。
 
-v0.1 检索层使用 JSON index + 正文扫描 + 可解释信号，**不引入向量数据库**。
+检索层使用 SQLite FTS + frontmatter / WikiLink / 可解释信号，**不引入向量数据库**。
 
 ## 技术栈
 
@@ -130,3 +130,37 @@ VPS `post-receive` 钩子自动：
 - Caddy 配置（`caddyfile`）
 - 部署脚本用法（`pull.ps1` / `deploy-code.sh`）
 - 工作台 bare repo 初始化（`D:\Data\工作台\deploy-vps.sh`）
+
+## Agent Workbase MCP
+
+公网私密 Agent 接入层，代码在 `server/mcp/`。
+
+```text
+Obsidian Vault（D:\Data\工作台）  = 知识事实源
+公开博客（本仓库构建产物）        = 展示层
+MCP Server（server/mcp/）         = Agent 接入层
+```
+
+同一份 vault，两套扫描：博客走 Vite `virtual:vault-tree`（只收 public 且非草稿）；MCP 走 indexer 写 SQLite。不共享同一份 index。
+
+| 文档 | 路径 |
+|---|---|
+| 设计（why / 验收） | [`docs/agent-workbase-mcp-v0.1.md`](docs/agent-workbase-mcp-v0.1.md) |
+| 字段契约 | [`SCHEMA.md`](SCHEMA.md) |
+| 实现说明 | [`server/mcp/README.md`](server/mcp/README.md) |
+| 配置模板 | [`server/mcp/config.example.yaml`](server/mcp/config.example.yaml) |
+
+关键约束（写代码以契约为准，不要抄现有 `internal/`）：
+
+- 所有 MCP 工具都必须带 Bearer token
+- 描述性字段从 `Workbase/` 即时读，Go 不硬编码文案
+- Agent 改正式内容只走 `proposal.create`；Inbox 是待办，不审批
+- Token 在 `{runtime}/auth.sqlite`，不进 `config.yaml`
+- 8 个标准 scope；`admin:reindex` 不是 Agent scope
+- 敏感过滤默认关；授权 Agent 读完整原文
+- reindex 只走本机 `POST /internal/reindex`；Caddy 必须排除 `/internal*`
+- `notes.id` = vault 相对路径（正斜杠，含 `.md`）；入库 / 查询一律 ToSlash
+- `knowledge.search` 已传 kind 过滤后为空 → 空结果，不回落默认；intent / scope 非法值报错
+- `context.startup` 跳过 secret；各 get 对 draft 放行，secret → `secret_blocked`
+
+骨架（config / `workbase.identity` / Token SQLite / `/internal/reindex`）已按契约落地。索引读路径、写路径、热度 / 审计仍是后续 PR；MCP 进程等那些合完再启。部署脚本在 `deploy/mcp/`。
