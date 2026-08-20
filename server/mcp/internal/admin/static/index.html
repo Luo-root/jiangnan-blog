@@ -348,7 +348,7 @@ function proposalHTML(p) {
       <div class="field"><div class="key">目标路径</div><div class="val-mono">${escapeHtml(target)}</div></div>
       <div class="field"><div class="key">Payload 内容</div><div class="val">${escapeHtml(content || '(空)')}</div></div>
       <div class="proposal-actions" id="prop-actions-${escapeHtml(p.id)}">
-        ${canReview ? `<button class="btn-edit" onclick="editProposal(event, '${escapeHtml(p.id)}')">编辑</button><button class="btn-approve" onclick="reviewProposal(event, '${escapeHtml(p.id)}', 'approved')">批准</button><button class="btn-reject" onclick="reviewProposal(event, '${escapeHtml(p.id)}', 'rejected')">拒绝</button>` : `<div class="detail-meta" style="margin:0">该 Proposal 已 ${escapeHtml(label)}，状态不可再变更。</div>`}
+        ${canReview ? `<button class="btn-edit" onclick="editProposal(event, '${escapeHtml(p.id)}')">编辑</button><button class="btn-approve" onclick="reviewProposal(event, '${escapeHtml(p.id)}', 'approved')">批准</button><button class="btn-reject" onclick="reviewProposal(event, '${escapeHtml(p.id)}', 'rejected')">拒绝</button>` : (status === 'conflict' ? `<button class="btn-edit" onclick="editProposal(event, '${escapeHtml(p.id)}')">编辑 payload</button><button class="btn-approve" onclick="reviewProposal(event, '${escapeHtml(p.id)}', 'approved')">用新 HEAD 重试</button>` : `<div class="detail-meta" style="margin:0">该 Proposal 已 ${escapeHtml(label)}。</div>`)}
       </div>
     </div>
   </article>`;
