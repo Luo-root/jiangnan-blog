@@ -1,7 +1,7 @@
 // Package inbox 管理独立待办（todo）。
 //
 // 状态机: pending → reviewing → done | abandoned
-// 生命周期: done/abandoned 保留 7 天自动删除。
+// 生命周期: done/abandoned 超过 retention_days 自动删除。
 //
 // 每条待办是一个 .md 文件，YAML frontmatter + Markdown 正文。
 package inbox
@@ -18,7 +18,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Status is the inbox item state.
 type Status string
 
 const (
@@ -36,7 +35,20 @@ func validStatus(s Status) bool {
 	return false
 }
 
-// Item 是一条待办。
+func canTransit(from, to Status) bool {
+	if from == to {
+		return true
+	}
+	switch from {
+	case StatusPending:
+		return to == StatusReviewing || to == StatusDone || to == StatusAbandoned
+	case StatusReviewing:
+		return to == StatusDone || to == StatusAbandoned
+	default:
+		return false
+	}
+}
+
 type Item struct {
 	ID        string    `json:"id"`
 	Kind      string    `json:"kind"`
@@ -44,11 +56,12 @@ type Item struct {
 	CreatedBy string    `json:"created_by"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	Content   string    `json:"content"` // Markdown 正文（不含 frontmatter）
+	Title     string    `json:"title,omitempty"`
+	Content   string    `json:"content"`
+	Tags      []string  `json:"tags,omitempty"`
 	Location  string    `json:"location"`
 }
 
-// Summary 是 list 返回的摘要，不含正文。
 type Summary struct {
 	ID          string    `json:"id"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -56,45 +69,42 @@ type Summary struct {
 	CreatedBy   string    `json:"created_by"`
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
-	Summary     string    `json:"summary"` // 兼容旧客户端：优先标题，其次描述
+	Summary     string    `json:"summary"`
 	Status      Status    `json:"status"`
 }
 
-// Store 管理 inbox 文件的读写。
 type Store struct {
-	dir  string
-	mu   sync.Mutex
-	stop chan struct{}
-	done chan struct{}
+	dir           string
+	retentionDays int
+	mu            sync.Mutex
+	stop          chan struct{}
+	done          chan struct{}
 }
 
-// New 创建 Store 并启动后台 7 天清理 goroutine。
-func New(dir string) (*Store, error) {
+func New(dir string, retentionDays int) (*Store, error) {
+	if retentionDays <= 0 {
+		retentionDays = 7
+	}
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
 	}
-	s := &Store{dir: dir, stop: make(chan struct{}), done: make(chan struct{})}
+	s := &Store{dir: dir, retentionDays: retentionDays, stop: make(chan struct{}), done: make(chan struct{})}
 	go s.cleanupLoop()
 	return s, nil
 }
 
-// Close 停止后台清理。
 func (s *Store) Close() {
 	close(s.stop)
 	<-s.done
 }
 
-// Append 新建一条 pending 待办，返回 id。
-func (s *Store) Append(createdBy string, content string) (string, error) {
+func (s *Store) Append(createdBy, content, title string, tags []string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	now := time.Now()
-	// 文件名带日期+时间，毫秒精度避免同一秒内多条互相覆盖。
-	id := now.Format("2006-01-02T15-04-05.000")
-	fname := id + ".md"
-	path := filepath.Join(s.dir, fname)
-
+	id := "inbox_" + now.Format("20060102_150405") + fmt.Sprintf("_%03d", now.Nanosecond()/1e6)
+	path := filepath.Join(s.dir, id+".md")
 	item := Item{
 		ID:        id,
 		Kind:      "inbox_todo",
@@ -102,43 +112,51 @@ func (s *Store) Append(createdBy string, content string) (string, error) {
 		CreatedBy: createdBy,
 		CreatedAt: now,
 		UpdatedAt: now,
+		Title:     title,
 		Content:   content,
+		Tags:      tags,
 		Location:  path,
 	}
-
 	if err := writeItem(path, item); err != nil {
 		return "", err
 	}
 	return id, nil
 }
 
-// Update 编辑内容或改变状态。
-func (s *Store) Update(id string, status Status, content string) error {
+func (s *Store) Update(id string, status Status, content, title string, tags []string) error {
 	if status != "" && !validStatus(status) {
 		return fmt.Errorf("invalid status: %s", status)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	fname := id + ".md"
-	path := filepath.Join(s.dir, fname)
+	path := filepath.Join(s.dir, id+".md")
 	item, err := readItem(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("inbox not found: %s", id)
+		}
 		return err
 	}
-
 	if status != "" {
+		if !canTransit(item.Status, status) {
+			return fmt.Errorf("invalid status transition: %s → %s", item.Status, status)
+		}
 		item.Status = status
 	}
 	if content != "" {
 		item.Content = content
 	}
+	if title != "" {
+		item.Title = title
+	}
+	if tags != nil {
+		item.Tags = tags
+	}
 	item.UpdatedAt = time.Now()
-
 	return writeItem(path, *item)
 }
 
-// List 返回所有待办摘要，按创建时间倒序。
 func (s *Store) List() ([]Summary, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -151,14 +169,18 @@ func (s *Store) List() ([]Summary, error) {
 	for _, p := range files {
 		item, err := readItem(p)
 		if err != nil {
-			continue // 跳过损坏的文件
+			continue
+		}
+		title := item.Title
+		if title == "" {
+			title = titleOf(item.Content)
 		}
 		out = append(out, Summary{
 			ID:          item.ID,
 			CreatedAt:   item.CreatedAt,
 			UpdatedAt:   item.UpdatedAt,
 			CreatedBy:   item.CreatedBy,
-			Title:       titleOf(item.Content),
+			Title:       title,
 			Description: descriptionOf(item.Content),
 			Summary:     summarise(item.Content),
 			Status:      item.Status,
@@ -167,18 +189,21 @@ func (s *Store) List() ([]Summary, error) {
 	return out, nil
 }
 
-// Get 读取单条完整内容。
 func (s *Store) Get(id string) (*Item, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	path := filepath.Join(s.dir, id+".md")
-	return readItem(path)
+	item, err := readItem(filepath.Join(s.dir, id+".md"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("inbox not found: %s", id)
+		}
+		return nil, err
+	}
+	if item.Title == "" {
+		item.Title = titleOf(item.Content)
+	}
+	return item, nil
 }
-
-// ---------------------------------------------------------------------------
-// 内部
-// ---------------------------------------------------------------------------
 
 type frontmatter struct {
 	ID        string    `yaml:"id"`
@@ -187,6 +212,8 @@ type frontmatter struct {
 	CreatedBy string    `yaml:"created_by"`
 	CreatedAt time.Time `yaml:"created_at"`
 	UpdatedAt time.Time `yaml:"updated_at"`
+	Title     string    `yaml:"title,omitempty"`
+	Tags      []string  `yaml:"tags,omitempty"`
 }
 
 func readItem(path string) (*Item, error) {
@@ -199,7 +226,6 @@ func readItem(path string) (*Item, error) {
 	if fm == "" {
 		return nil, errors.New("missing frontmatter")
 	}
-
 	var f frontmatter
 	if err := yaml.Unmarshal([]byte(fm), &f); err != nil {
 		return nil, err
@@ -211,20 +237,31 @@ func readItem(path string) (*Item, error) {
 		CreatedBy: f.CreatedBy,
 		CreatedAt: f.CreatedAt,
 		UpdatedAt: f.UpdatedAt,
+		Title:     f.Title,
 		Content:   strings.TrimSpace(body),
+		Tags:      f.Tags,
 		Location:  path,
 	}, nil
 }
 
 func writeItem(path string, item Item) error {
+	fm := frontmatter{
+		ID:        item.ID,
+		Kind:      item.Kind,
+		Status:    item.Status,
+		CreatedBy: item.CreatedBy,
+		CreatedAt: item.CreatedAt,
+		UpdatedAt: item.UpdatedAt,
+		Title:     item.Title,
+		Tags:      item.Tags,
+	}
+	b, err := yaml.Marshal(fm)
+	if err != nil {
+		return err
+	}
 	var sb strings.Builder
 	sb.WriteString("---\n")
-	sb.WriteString(fmt.Sprintf("id: %s\n", item.ID))
-	sb.WriteString(fmt.Sprintf("kind: %s\n", item.Kind))
-	sb.WriteString(fmt.Sprintf("status: %s\n", item.Status))
-	sb.WriteString(fmt.Sprintf("created_by: %s\n", item.CreatedBy))
-	sb.WriteString(fmt.Sprintf("created_at: %s\n", item.CreatedAt.Format(time.RFC3339)))
-	sb.WriteString(fmt.Sprintf("updated_at: %s\n", item.UpdatedAt.Format(time.RFC3339)))
+	sb.WriteString(string(b))
 	sb.WriteString("---\n\n")
 	sb.WriteString(item.Content)
 	sb.WriteString("\n")
@@ -236,7 +273,6 @@ func splitFrontmatter(text string) (fm string, body string) {
 	if !strings.HasPrefix(t, "---") {
 		return "", t
 	}
-	// 找第二个 ---
 	rest := t[3:]
 	idx := strings.Index(rest, "\n---")
 	if idx < 0 {
@@ -265,7 +301,6 @@ func titleOf(content string) string {
 	return "未命名待办"
 }
 
-// descriptionOf 返回标题之后的第一个非空段落；没有则返回空串。
 func descriptionOf(content string) string {
 	lines := strings.Split(strings.TrimSpace(content), "\n")
 	seenTitle := false
@@ -275,11 +310,10 @@ func descriptionOf(content string) string {
 			continue
 		}
 		if strings.HasPrefix(t, "#") {
-			seenTitle = true // 标题行不计入描述
+			seenTitle = true
 			continue
 		}
 		if !seenTitle {
-			// 无 heading 时，第一个非空行被当作标题，之后的行才算描述
 			seenTitle = true
 			continue
 		}
@@ -298,12 +332,11 @@ func summarise(content string) string {
 	return titleOf(content)
 }
 
-// cleanupLoop 每 1 小时清理一次 done/abandoned 超过 7 天的文件。
 func (s *Store) cleanupLoop() {
 	defer close(s.done)
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
-
+	s.cleanup()
 	for {
 		select {
 		case <-s.stop:
@@ -322,7 +355,7 @@ func (s *Store) cleanup() {
 	if err != nil {
 		return
 	}
-	cutoff := time.Now().Add(-7 * 24 * time.Hour)
+	cutoff := time.Now().Add(-time.Duration(s.retentionDays) * 24 * time.Hour)
 	for _, p := range files {
 		item, err := readItem(p)
 		if err != nil {

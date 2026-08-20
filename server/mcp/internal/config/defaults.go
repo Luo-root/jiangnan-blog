@@ -37,6 +37,16 @@ func DefaultSearchWeights() map[string]float64 {
 	}
 }
 
+// DefaultIntentBias 对应 SCHEMA §1 knowledge.search.intent_bias。
+func DefaultIntentBias() map[string]map[string]float64 {
+	return map[string]map[string]float64{
+		"why":     {"frontmatter": 1.3, "section": 1.3},
+		"when":    {"recency": 1.5},
+		"entity":  {"tags": 1.3},
+		"general": {},
+	}
+}
+
 // DefaultVisibilityDefault 对应 SCHEMA §3.2。运行时权威仍是 yaml；这里只给缺省 map。
 func DefaultVisibilityDefault() map[string]string {
 	return map[string]string{

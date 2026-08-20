@@ -67,6 +67,9 @@ func TestLoadRequiredFields(t *testing.T) {
 	if !strings.HasSuffix(c.AuthDB(), filepath.Join("auth.sqlite")) && !strings.Contains(c.AuthDB(), "auth.sqlite") {
 		t.Fatalf("auth db path = %s", c.AuthDB())
 	}
+	if !strings.Contains(c.IndexDB(), "notes.sqlite") {
+		t.Fatalf("index db path = %s", c.IndexDB())
+	}
 }
 
 func TestLoadMissingVisibilityPolicy(t *testing.T) {

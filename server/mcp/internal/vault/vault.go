@@ -13,32 +13,34 @@ import (
 
 // Note 是 Vault 中一个 .md 文件的元数据摘要。
 type Note struct {
-	ID         string                 `json:"id"` // 旧实现去 .md；契约含 .md。不要当规格。
+	ID         string                 `json:"id"` // notes.id = vault 相对路径，正斜杠，含 .md
 	Path       string                 `json:"path"`
 	Title      string                 `json:"title"`
-	Section    string                 `json:"section"` // 一级目录（栏目）
+	Kind       string                 `json:"kind"`
+	Section    string                 `json:"section"`
 	Visibility string                 `json:"visibility"`
 	Tags       []string               `json:"tags"`
+	Summary    string                 `json:"summary"`
+	Headings   []string               `json:"headings"`
 	UpdatedAt  time.Time              `json:"updated_at"`
 	FM         map[string]interface{} `json:"frontmatter"`
+	Body       string                 `json:"-"`
 }
 
-// Index 是所有索引数据的容器。
+// Index 是一次扫描的内存镜像。持久化走 SQLite，不写 JSON。
 type Index struct {
-	Notes     []Note              `json:"notes"`
-	Projects  []Project           `json:"projects"`
-	Skills    []Skill             `json:"skills"`
-	MCPS      []MCPServer         `json:"mcps"`
-	Context   []ContextPack       `json:"context"`
-	Backlinks map[string][]string `json:"-"` // id → 指向它的 ids（运行时计算，不持久化到 JSON）
+	Notes     []Note
+	Projects  []Project
+	Skills    []Skill
+	MCPS      []MCPServer
+	Context   []ContextPack
+	Links     []Link
+	Backlinks map[string][]string
 }
 
-// Project 来自 项目/*.md frontmatter。
+// Project 来自 项目/*.md。
 type Project struct {
 	Note
-	Name    string `json:"name"`
-	Summary string `json:"summary"`
-	Status  string `json:"status"`
 }
 
 // Skill 来自 Workbase/skills/*.md。
@@ -65,11 +67,22 @@ type ContextPack struct {
 	Content  string `json:"content"`
 }
 
-// Scan 扫描 vault 根目录，返回索引。
-func Scan(vaultRoot string, excludedSections []string) (*Index, error) {
+// Link 是解析成功的 WikiLink 边。重名只记 raw，不建边。
+type Link struct {
+	SourceID string
+	TargetID string
+	LinkType string
+	Raw      string
+}
+
+// Scan 扫描 vault 根目录。excluded 是一级目录名（.obsidian / .trash）。
+func Scan(vaultRoot string, excluded []string, visDefault map[string]string) (*Index, error) {
 	excl := map[string]bool{}
-	for _, s := range excludedSections {
+	for _, s := range excluded {
 		excl[s] = true
+	}
+	if visDefault == nil {
+		visDefault = map[string]string{}
 	}
 
 	idx := &Index{}
@@ -83,16 +96,14 @@ func Scan(vaultRoot string, excludedSections []string) (*Index, error) {
 			continue
 		}
 		section := e.Name()
-		walkDir(vaultRoot, filepath.Join(vaultRoot, section), section, excl, idx)
+		walkDir(vaultRoot, filepath.Join(vaultRoot, section), section, excl, visDefault, idx)
 	}
 
-	// 构建反向链接索引（跑完所有 note 后）
-	idx.Backlinks = buildBacklinks(vaultRoot, idx.Notes)
-
+	idx.Links, idx.Backlinks = buildLinks(idx.Notes)
 	return idx, nil
 }
 
-func walkDir(vaultRoot, dir, section string, excl map[string]bool, idx *Index) {
+func walkDir(vaultRoot, dir, section string, excl map[string]bool, visDefault map[string]string, idx *Index) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
@@ -102,55 +113,43 @@ func walkDir(vaultRoot, dir, section string, excl map[string]bool, idx *Index) {
 			if excl[e.Name()] {
 				continue
 			}
-			walkDir(vaultRoot, filepath.Join(dir, e.Name()), section, excl, idx)
+			walkDir(vaultRoot, filepath.Join(dir, e.Name()), section, excl, visDefault, idx)
 			continue
 		}
 		if !strings.HasSuffix(strings.ToLower(e.Name()), ".md") {
 			continue
 		}
 		abs := filepath.Join(dir, e.Name())
-		note := parseNote(abs, section)
+		id := NoteID(vaultRoot, abs)
+		kind, skip := ClassifyKind(id)
+		if skip {
+			continue
+		}
+		note := parseNote(abs, section, id, kind, visDefault)
 		if note == nil {
 			continue
 		}
-		note.ID = noteID(vaultRoot, abs)
 		idx.Notes = append(idx.Notes, *note)
 
-		switch section {
-		case "项目":
-			idx.Projects = append(idx.Projects, toProject(*note))
-		case "Workbase":
-			kind, _ := note.FM["kind"].(string)
-			switch kind {
-			case "skill":
-				idx.Skills = append(idx.Skills, toSkill(*note))
-			case "mcp_server":
-				idx.MCPS = append(idx.MCPS, toMCPServer(*note))
+		switch kind {
+		case "project":
+			idx.Projects = append(idx.Projects, Project{Note: *note})
+		case "skill":
+			idx.Skills = append(idx.Skills, toSkill(*note))
+		case "mcp_server":
+			idx.MCPS = append(idx.MCPS, toMCPServer(*note))
+		case "context_pack":
+			cp := toContextPack(*note)
+			cp.Content = note.Body
+			if raw, err := os.ReadFile(abs); err == nil {
+				cp.Content = string(raw)
 			}
-			if note.FM["type"] != nil && fmt.Sprint(note.FM["type"]) == "context_pack" {
-				cp := toContextPack(*note)
-				b, _ := os.ReadFile(abs)
-				cp.Content = string(b)
-				idx.Context = append(idx.Context, cp)
-			}
+			idx.Context = append(idx.Context, cp)
 		}
 	}
 }
 
-// noteID 是旧实现，不要当规格。
-// 契约：notes.id = vault 相对路径，正斜杠，含 .md（如 文章/foo.md）。
-// 入库 / 查询一律 filepath.ToSlash；请求里的 \ 先归一再查。
-// 这里 TrimSuffix(rel, ".md") 和契约拧着，重构时删掉去后缀。
-func noteID(vaultRoot, abs string) string {
-	rel, err := filepath.Rel(vaultRoot, abs)
-	if err != nil {
-		rel = abs
-	}
-	rel = filepath.ToSlash(strings.TrimSuffix(rel, ".md"))
-	return rel
-}
-
-func parseNote(abs, section string) *Note {
+func parseNote(abs, section, id, kind string, visDefault map[string]string) *Note {
 	info, err := os.Stat(abs)
 	if err != nil {
 		return nil
@@ -164,31 +163,36 @@ func parseNote(abs, section string) *Note {
 
 	fmMap := map[string]interface{}{}
 	if fm != "" {
-		// frontmatter 用 yaml.v3 解析，正确支持 tags 列表、source/auth 嵌套 map。
 		if err := yaml.Unmarshal([]byte(fm), &fmMap); err != nil {
 			fmMap = map[string]interface{}{}
 		}
 	}
 
-	vis, _ := fmMap["visibility"].(string)
-	if vis == "" {
-		vis = "public" // 缺省兼容
+	fmVis, _ := fmMap["visibility"].(string)
+	vis := ResolveVisibility(id, fmVis, visDefault)
+	tags := extractTags(fmMap["tags"])
+	summary := extractSummary(fmMap, body)
+	updated := info.ModTime()
+	if u := fmTime(fmMap["updated"]); !u.IsZero() {
+		updated = u
 	}
 
-	tags := extractTags(fmMap["tags"])
-
 	return &Note{
+		ID:         id,
 		Path:       abs,
 		Title:      title,
+		Kind:       kind,
 		Section:    section,
 		Visibility: vis,
 		Tags:       tags,
-		UpdatedAt:  info.ModTime(),
+		Summary:    summary,
+		Headings:   extractHeadings(body),
+		UpdatedAt:  updated,
 		FM:         fmMap,
+		Body:       body,
 	}
 }
 
-// extractTags 兼容 tags 的两种写法：逗号分隔字符串 / YAML 列表。
 func extractTags(v interface{}) []string {
 	var out []string
 	switch t := v.(type) {
@@ -227,34 +231,84 @@ func extractTitle(body, filename string) string {
 	for _, line := range strings.Split(body, "\n") {
 		t := strings.TrimSpace(line)
 		if strings.HasPrefix(t, "# ") {
-			return strings.TrimLeft(t, "# ")
+			return strings.TrimSpace(strings.TrimPrefix(t, "# "))
 		}
 	}
 	return strings.TrimSuffix(filename, ".md")
 }
 
-func toProject(n Note) Project {
-	n2, _ := n.FM["name"].(string)
-	if n2 == "" {
-		n2 = n.Title
+func extractHeadings(body string) []string {
+	var out []string
+	for _, line := range strings.Split(body, "\n") {
+		t := strings.TrimSpace(line)
+		if !strings.HasPrefix(t, "#") {
+			continue
+		}
+		h := strings.TrimSpace(strings.TrimLeft(t, "#"))
+		if h != "" {
+			out = append(out, h)
+		}
 	}
-	s, _ := n.FM["summary"].(string)
-	st, _ := n.FM["status"].(string)
-	return Project{Note: n, Name: n2, Summary: s, Status: st}
+	return out
+}
+
+func extractSummary(fm map[string]interface{}, body string) string {
+	if s, _ := fm["summary"].(string); strings.TrimSpace(s) != "" {
+		return strings.TrimSpace(s)
+	}
+	var para []string
+	for _, line := range strings.Split(body, "\n") {
+		t := strings.TrimSpace(line)
+		if t == "" {
+			if len(para) > 0 {
+				break
+			}
+			continue
+		}
+		if strings.HasPrefix(t, "#") {
+			continue
+		}
+		para = append(para, t)
+		if len(strings.Join(para, " ")) > 160 {
+			break
+		}
+	}
+	s := strings.Join(para, " ")
+	if len([]rune(s)) > 180 {
+		r := []rune(s)
+		s = string(r[:180]) + "…"
+	}
+	return s
+}
+
+func fmTime(v interface{}) time.Time {
+	s, _ := v.(string)
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}
+	}
+	for _, layout := range []string{
+		time.RFC3339,
+		"2006-01-02",
+		"2006-01-02 15:04:05",
+	} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
 }
 
 func toSkill(n Note) Skill {
 	r, _ := n.FM["risk"].(string)
-	src := n.FM["source"]
-	return Skill{Note: n, Risk: r, Source: src}
+	return Skill{Note: n, Risk: r, Source: n.FM["source"]}
 }
 
 func toMCPServer(n Note) MCPServer {
 	t, _ := n.FM["transport"].(string)
 	ep, _ := n.FM["endpoint"].(string)
 	r, _ := n.FM["risk"].(string)
-	auth := n.FM["auth"]
-	return MCPServer{Note: n, Transport: t, EndpointHint: ep, Auth: auth, Risk: r}
+	return MCPServer{Note: n, Transport: t, EndpointHint: ep, Auth: n.FM["auth"], Risk: r}
 }
 
 func toContextPack(n Note) ContextPack {
@@ -301,48 +355,73 @@ func ReadBody(abs string) string {
 	return body
 }
 
-// buildBacklinks 为每个 note 构建反向链接索引。
-// 返回 map[id]→[]ids（指向该 id 的 note id 列表）。
-func buildBacklinks(vaultRoot string, notes []Note) map[string][]string {
-	bl := map[string][]string{}
-	// 先建立 filename→id 索引加速解析
-	nameIdx := map[string]string{} // 文件名（去.md）→ id
-	for i := range notes {
-		name := strings.TrimSuffix(filepath.Base(notes[i].Path), ".md")
-		// 多级路径也要匹配：文章/运维学习笔记/01-Kubernetes/Ingress-Nginx-Max
-		nameIdx[strings.ToLower(name)] = notes[i].ID
-		nameIdx[strings.ToLower(notes[i].ID)] = notes[i].ID
-	}
-
-	for i := range notes {
-		body := ReadBody(notes[i].Path)
-		links := ExtractWikiLinks(body)
-		for _, target := range links {
-			candidate := resolveWikiLink(vaultRoot, target, nameIdx)
-			if candidate != "" && candidate != notes[i].ID {
-				bl[candidate] = append(bl[candidate], notes[i].ID)
-			}
-		}
-	}
-	return bl
+func wikiKey(id string) string {
+	return strings.ToLower(filepath.ToSlash(strings.TrimSuffix(id, ".md")))
 }
 
-// resolveWikiLink 将 WikiLink target 解析为 note id（vault 相对路径）。
-func resolveWikiLink(vaultRoot string, target string, nameIdx map[string]string) string {
-	target = filepath.ToSlash(strings.TrimSuffix(target, ".md"))
-	// 1. 直接路径匹配
-	if id, ok := nameIdx[strings.ToLower(target)]; ok {
+func buildLinks(notes []Note) ([]Link, map[string][]string) {
+	byPath := map[string]string{}
+	byName := map[string][]string{}
+	for i := range notes {
+		id := notes[i].ID
+		byPath[wikiKey(id)] = id
+		name := strings.ToLower(strings.TrimSuffix(filepath.Base(id), ".md"))
+		byName[name] = append(byName[name], id)
+	}
+
+	var links []Link
+	bl := map[string][]string{}
+	seen := map[string]struct{}{}
+	for i := range notes {
+		src := notes[i].ID
+		for _, raw := range ExtractWikiLinks(notes[i].Body) {
+			target := resolveWikiLink(raw, byPath, byName)
+			if target == "" || target == src {
+				continue
+			}
+			key := src + "\x00" + target
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			links = append(links, Link{SourceID: src, TargetID: target, LinkType: "wikilink", Raw: raw})
+			bl[target] = append(bl[target], src)
+		}
+	}
+	return links, bl
+}
+
+func resolveWikiLink(target string, byPath map[string]string, byName map[string][]string) string {
+	key := wikiKey(target)
+	if id, ok := byPath[key]; ok {
 		return id
 	}
-	// 2. 文件名匹配
-	base := strings.ToLower(filepath.Base(target))
-	if id, ok := nameIdx[base]; ok {
-		return id
-	}
-	// 3. 直接文件存在
-	abs := filepath.Join(vaultRoot, filepath.FromSlash(target)+".md")
-	if _, err := os.Stat(abs); err == nil {
-		return target
+	base := strings.ToLower(filepath.Base(key))
+	ids := byName[base]
+	if len(ids) == 1 {
+		return ids[0]
 	}
 	return ""
+}
+
+// LinkContext 取链接前后约 50 字。
+func LinkContext(body, raw string) string {
+	idx := strings.Index(body, "[["+raw)
+	if idx < 0 {
+		idx = strings.Index(body, raw)
+	}
+	if idx < 0 {
+		return ""
+	}
+	runes := []rune(body)
+	start := 0
+	pos := len([]rune(body[:idx]))
+	if pos > 50 {
+		start = pos - 50
+	}
+	end := pos + 50
+	if end > len(runes) {
+		end = len(runes)
+	}
+	return strings.TrimSpace(string(runes[start:end]))
 }
