@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"os/exec"
 	"sort"
 	"strings"
@@ -102,7 +101,7 @@ func (r *depsHolder) handleKnowledgeSearch(ctx context.Context, req mcp.CallTool
 	}
 
 	if kindsGiven && len(kinds) == 0 {
-		return jsonResult(emptySearch(query)), nil
+		return jsonResult(search.EmptyResult(query)), nil
 	}
 
 	weights := search.DefaultWeights()
@@ -123,7 +122,7 @@ func (r *depsHolder) handleKnowledgeSearch(ctx context.Context, req mcp.CallTool
 		kindSet[k] = struct{}{}
 	}
 
-	var hits []searchHit
+	var hits []search.Result
 	for _, n := range r.d.Idx.Notes() {
 		if n.Kind != "note" && n.Kind != "article" {
 			continue
@@ -134,73 +133,19 @@ func (r *depsHolder) handleKnowledgeSearch(ctx context.Context, req mcp.CallTool
 		if !vault.MatchScope(n.Visibility, scope) {
 			continue
 		}
-
-		fmJSON := jsonString(n.FM)
-		tagsStr := strings.Join(n.Tags, " ")
-		headings := strings.Join(n.Headings, "\n")
-		titleHit := search.Hit(n.Title, tokens)
-		tagsHit := search.Hit(tagsStr, tokens)
-		fmHit := search.Hit(fmJSON, tokens)
-		sectionHit := search.Hit(headings, tokens)
-		bodyHit := search.Hit(n.Body, tokens)
-		if !titleHit && !tagsHit && !fmHit && !sectionHit && !bodyHit {
+		doc := search.FromNote(n, r.d.Idx.Count(n.ID), r.d.Idx.LastAccess(n.ID), len(r.d.Idx.Backlinks(n.ID)))
+		hit, ok := search.Score(doc, tokens, weights, intentMul, halfLife, now)
+		if !ok {
 			continue
 		}
-
-		w := func(name string) float64 {
-			v := weights[name]
-			if m, ok := intentMul[name]; ok && m != 0 {
-				v *= m
-			}
-			return v
-		}
-		signals := map[string]float64{
-			"title":            boolScore(titleHit, w("title")),
-			"tags":             boolScore(tagsHit, w("tags")),
-			"frontmatter":      boolScore(fmHit, w("frontmatter")),
-			"section":          boolScore(sectionHit, w("section")),
-			"fulltext":         boolScore(bodyHit, w("fulltext")),
-			"wikilink_backref": float64(len(r.d.Idx.Backlinks(n.ID))) * w("wikilink_backref"),
-			"access":           search.Access(r.d.Idx.Count(n.ID), r.d.Idx.LastAccess(n.ID), now, halfLife, w("access")),
-			"recency":          search.Recency(n.UpdatedAt, now, w("recency")),
-		}
-		score := 0.0
-		fields := []string{}
-		via := []string{}
-		for _, name := range []string{"title", "tags", "frontmatter", "section", "fulltext", "wikilink_backref", "access", "recency"} {
-			if signals[name] > 0 {
-				score += signals[name]
-				fields = append(fields, name)
-			}
-		}
-		if bodyHit {
-			via = append(via, "fulltext")
-		}
-		if signals["wikilink_backref"] > 0 {
-			via = append(via, "wikilink_backref")
-		}
-		if titleHit || tagsHit || fmHit || sectionHit {
-			via = append(via, "frontmatter")
-		}
-		hits = append(hits, searchHit{
-			ID:            n.ID,
-			Title:         n.Title,
-			PathHint:      n.ID,
-			Kind:          n.Kind,
-			Visibility:    n.Visibility,
-			Summary:       n.Summary,
-			MatchedFields: fields,
-			Score:         score,
-			MatchedVia:    strings.Join(via, " + "),
-			Signals:       signals,
-		})
+		hits = append(hits, hit)
 	}
-	sort.SliceStable(hits, func(i, j int) bool { return hits[i].Score > hits[j].Score })
+	search.SortHits(hits, "score")
 	if len(hits) > limit {
 		hits = hits[:limit]
 	}
 	if len(hits) == 0 {
-		return jsonResult(emptySearch(query)), nil
+		return jsonResult(search.EmptyResult(query)), nil
 	}
 	return jsonResult(map[string]any{"results": hits}), nil
 }
@@ -442,34 +387,6 @@ func (r *depsHolder) handleMCPGet(ctx context.Context, req mcp.CallToolRequest) 
 	return jsonResult(result), nil
 }
 
-type searchHit struct {
-	ID            string             `json:"id"`
-	Title         string             `json:"title"`
-	PathHint      string             `json:"path_hint"`
-	Kind          string             `json:"kind"`
-	Visibility    string             `json:"visibility"`
-	Summary       string             `json:"summary"`
-	MatchedFields []string           `json:"matched_fields"`
-	Score         float64            `json:"score"`
-	MatchedVia    string             `json:"matched_via"`
-	Signals       map[string]float64 `json:"signals"`
-}
-
-func emptySearch(query string) map[string]any {
-	return map[string]any{
-		"results": []any{},
-		"message": "未查询到相关内容",
-		"suggestions": []string{
-			"缩短关键词：去掉修饰词（'的'/'一个'/'关于'）",
-			"改用更通用的词：例如 'kubernetes' 替代 'k8s pod 调度'",
-			"检查 scope 权限：当前 token scope 是否包含 read:knowledge",
-			"检查 visibility：public 内容只能搜到 public 知识",
-		},
-		"query_echo":       query,
-		"executed_signals": []string{"title", "tags", "frontmatter", "section", "fulltext"},
-	}
-}
-
 func parseSearchKinds(args map[string]any) (kinds []string, given bool) {
 	if args == nil {
 		return []string{"note", "article"}, false
@@ -505,13 +422,6 @@ func parseSearchKinds(args map[string]any) (kinds []string, given bool) {
 		}
 	}
 	return kinds, true
-}
-
-func boolScore(hit bool, w float64) float64 {
-	if !hit {
-		return 0
-	}
-	return w
 }
 
 func concatStartupPacks(packs []vault.ContextPack) []vault.ContextPack {
@@ -597,18 +507,6 @@ func backlinkEdges(r *depsHolder, id string) []vault.Link {
 		edges = append(edges, vault.Link{SourceID: src, TargetID: id, LinkType: "wikilink", Raw: raw})
 	}
 	return edges
-}
-
-func jsonString(v interface{}) string {
-	switch s := v.(type) {
-	case nil:
-		return ""
-	case string:
-		return s
-	default:
-		b, _ := json.Marshal(v)
-		return string(b)
-	}
 }
 
 func baseCommit(gitDir string) string {

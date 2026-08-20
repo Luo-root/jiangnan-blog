@@ -19,6 +19,18 @@ func TestAccessNeverVisited(t *testing.T) {
 	}
 }
 
+func TestScoreTitleHitAndEmpty(t *testing.T) {
+	now := time.Now()
+	doc := Doc{ID: "文章/hello.md", Title: "Hello kubernetes", Kind: "article", Body: "body", UpdatedAt: now}
+	hit, ok := Score(doc, Tokenize("kubernetes"), DefaultWeights(), nil, 7, now)
+	if !ok || hit.Score <= 0 || hit.ID != "文章/hello.md" {
+		t.Fatalf("hit=%+v ok=%v", hit, ok)
+	}
+	if _, ok := Score(doc, Tokenize("zzzz"), DefaultWeights(), nil, 7, now); ok {
+		t.Fatal("miss should be empty")
+	}
+}
+
 func TestAccessDecay(t *testing.T) {
 	now := time.Now()
 	fresh := Access(10, now, now, 7, 1)

@@ -104,6 +104,9 @@ func (c *Config) AuditDB() string {
 	return filepath.Join(c.Workbase.Runtime, "audit", "audit.sqlite")
 }
 func (c *Config) AuthDB() string { return filepath.Join(c.Workbase.Runtime, "auth.sqlite") }
+func (c *Config) TemplatesDir() string {
+	return filepath.Join(c.Workbase.Runtime, "templates")
+}
 
 func (c *Config) RuntimeDirs() []string {
 	return []string{
@@ -112,6 +115,7 @@ func (c *Config) RuntimeDirs() []string {
 		c.ProposalsDir(),
 		c.InboxDir(),
 		filepath.Dir(c.AuditDB()),
+		c.TemplatesDir(),
 	}
 }
 

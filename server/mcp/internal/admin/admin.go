@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/apply"
+	"github.com/Luo-root/jiangnan-blog/mcp/internal/audit"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/auth"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/inbox"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/index"
@@ -39,6 +40,16 @@ type Handler struct {
 	RebuildCmd       string
 	HalfLifeDays     float64
 	MinScore         float64
+	Audit            *audit.Store
+	SearchWeights    map[string]float64
+	StartedAt        time.Time
+	MCPListen        string
+	AdminListen      string
+	RuntimeDir       string
+	IndexDB          string
+	AuditDB          string
+	AuthDB           string
+	TemplatesDir     string
 }
 
 // ServeHTTP 路由分发。
@@ -101,6 +112,24 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.revokeToken(w, r, strings.TrimSuffix(strings.TrimPrefix(path, "api/auth_tokens/"), "/revoke"))
 	case strings.HasSuffix(path, "/rotate") && strings.HasPrefix(path, "api/auth_tokens/") && r.Method == http.MethodPost:
 		h.rotateToken(w, r, strings.TrimSuffix(strings.TrimPrefix(path, "api/auth_tokens/"), "/rotate"))
+	case path == "api/audit/recent" && r.Method == http.MethodGet:
+		h.listAudit(w, r)
+	case path == "api/knowledge/search" && r.Method == http.MethodGet:
+		h.searchKnowledge(w, r)
+	case path == "api/knowledge" && r.Method == http.MethodGet:
+		h.getKnowledge(w, r)
+	case path == "api/system/health" && r.Method == http.MethodGet:
+		h.systemHealth(w, r)
+	case path == "api/git/history" && r.Method == http.MethodGet:
+		h.gitHistory(w, r)
+	case strings.HasPrefix(path, "api/git/diff/") && r.Method == http.MethodGet:
+		h.gitDiff(w, r, strings.TrimPrefix(path, "api/git/diff/"))
+	case path == "api/templates" && r.Method == http.MethodGet:
+		h.listTemplates(w, r)
+	case path == "api/templates" && r.Method == http.MethodPost:
+		h.createTemplate(w, r)
+	case strings.HasPrefix(path, "api/templates/") && r.Method == http.MethodPost:
+		h.updateTemplate(w, r, strings.TrimPrefix(path, "api/templates/"))
 	default:
 		h.serveStatic(w, r)
 	}

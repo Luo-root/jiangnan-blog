@@ -10,6 +10,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/index"
+	"github.com/Luo-root/jiangnan-blog/mcp/internal/search"
 )
 
 func writeVault(t *testing.T, root, rel, body string) {
@@ -112,7 +113,7 @@ func (o toolOut) errText(t *testing.T) string {
 
 func searchIDs(m map[string]any) []string {
 	switch rs := m["results"].(type) {
-	case []searchHit:
+	case []search.Result:
 		out := make([]string, 0, len(rs))
 		for _, h := range rs {
 			out = append(out, h.ID)
@@ -122,7 +123,7 @@ func searchIDs(m map[string]any) []string {
 		out := make([]string, 0, len(rs))
 		for _, item := range rs {
 			switch h := item.(type) {
-			case searchHit:
+			case search.Result:
 				out = append(out, h.ID)
 			case map[string]any:
 				if id, ok := h["id"].(string); ok {
