@@ -55,7 +55,11 @@ func main() {
 	}
 
 	auditStore := audit.New(cfg.AuditFile(), 2000)
-	idx := index.New(cfg.IndexFile())
+	idx, err := index.Open(cfg.IndexDB())
+	if err != nil {
+		log.Fatalf("init index: %v", err)
+	}
+	defer idx.Close()
 
 	tokenStore, err := auth.Open(cfg.AuthDB(), cfg.Auth.GracePeriodHours)
 	if err != nil {
@@ -64,11 +68,11 @@ func main() {
 	defer tokenStore.Close()
 
 	log.Printf("rebuilding index from vault: %s", cfg.Vault.Root)
-	if err := idx.Rebuild(cfg.Vault.Root, excludedSections); err != nil {
+	if err := idx.Rebuild(cfg.Vault.Root, excludedSections, cfg.Schema.VisibilityDefault); err != nil {
 		log.Printf("WARN: rebuild index: %v", err)
 	} else {
-		log.Printf("indexed %d notes, %d projects, %d skills, %d mcps, %d context packs",
-			len(idx.Notes()), len(idx.Projects()), len(idx.Skills()), len(idx.MCPServers()), len(idx.ContextPacks()))
+		n, p, sk, m, c := idx.Stats()
+		log.Printf("indexed %d notes, %d projects, %d skills, %d mcps, %d context packs", n, p, sk, m, c)
 	}
 
 	if *reindexOnly {
@@ -123,6 +127,7 @@ func main() {
 		VaultRoot:        cfg.Vault.Root,
 		GitDir:           cfg.Vault.GitDir,
 		ExcludedSections: excludedSections,
+		VisDefault:       cfg.Schema.VisibilityDefault,
 		RebuildCmd:       cfg.Workbase.RebuildCmd,
 	}
 	adminSrv := &http.Server{Addr: cfg.Admin.Listen, Handler: adminHandler}
@@ -158,14 +163,14 @@ func handleInternalReindex(cfg *config.Config, idx *index.Store) http.HandlerFun
 			return
 		}
 		log.Printf("reindex triggered")
-		if err := idx.Rebuild(cfg.Vault.Root, excludedSections); err != nil {
+		if err := idx.Rebuild(cfg.Vault.Root, excludedSections, cfg.Schema.VisibilityDefault); err != nil {
 			log.Printf("reindex failed: %v", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		n, p, sk, m, c := idx.Stats()
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"ok":true,"notes":%d,"projects":%d,"skills":%d,"mcps":%d,"context":%d}`,
-			len(idx.Notes()), len(idx.Projects()), len(idx.Skills()), len(idx.MCPServers()), len(idx.ContextPacks()))
+		fmt.Fprintf(w, `{"ok":true,"notes":%d,"projects":%d,"skills":%d,"mcps":%d,"context":%d}`, n, p, sk, m, c)
 	}
 }
 

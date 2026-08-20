@@ -14,7 +14,11 @@ import (
 
 func TestInternalReindexIgnoresRemoteAddr(t *testing.T) {
 	dir := t.TempDir()
-	idx := index.New(filepath.Join(dir, "notes.json"))
+	idx, err := index.Open(filepath.Join(dir, "notes.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = idx.Close() })
 	cfg := &config.Config{}
 	cfg.Vault.Root = dir
 
@@ -37,7 +41,11 @@ func TestInternalReindexIgnoresRemoteAddr(t *testing.T) {
 
 func TestInternalReindexRejectsPut(t *testing.T) {
 	dir := t.TempDir()
-	idx := index.New(filepath.Join(dir, "notes.json"))
+	idx, err := index.Open(filepath.Join(dir, "notes.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = idx.Close() })
 	cfg := &config.Config{}
 	cfg.Vault.Root = dir
 	h := handleInternalReindex(cfg, idx)

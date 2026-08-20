@@ -97,8 +97,8 @@ type Schema struct {
 
 func (c *Config) InboxDir() string     { return filepath.Join(c.Workbase.Runtime, "inbox") }
 func (c *Config) ProposalsDir() string { return filepath.Join(c.Workbase.Runtime, "proposals") }
-func (c *Config) IndexFile() string {
-	return filepath.Join(c.Workbase.Runtime, "index", "notes.json")
+func (c *Config) IndexDB() string {
+	return filepath.Join(c.Workbase.Runtime, "index", "notes.sqlite")
 }
 func (c *Config) AuditFile() string {
 	return filepath.Join(c.Workbase.Runtime, "audit", "audit.jsonl")
@@ -108,7 +108,7 @@ func (c *Config) AuthDB() string { return filepath.Join(c.Workbase.Runtime, "aut
 func (c *Config) RuntimeDirs() []string {
 	return []string{
 		c.Workbase.Runtime,
-		filepath.Dir(c.IndexFile()),
+		filepath.Dir(c.IndexDB()),
 		c.ProposalsDir(),
 		c.InboxDir(),
 		filepath.Dir(c.AuditFile()),
@@ -175,6 +175,9 @@ func applyDefaults(c *Config) {
 	}
 	if len(c.Knowledge.Search.Weights) == 0 {
 		c.Knowledge.Search.Weights = DefaultSearchWeights()
+	}
+	if c.Knowledge.Search.IntentBias == nil {
+		c.Knowledge.Search.IntentBias = DefaultIntentBias()
 	}
 }
 

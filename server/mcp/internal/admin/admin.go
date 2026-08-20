@@ -35,6 +35,7 @@ type Handler struct {
 	VaultRoot        string
 	GitDir           string
 	ExcludedSections []string
+	VisDefault       map[string]string
 	RebuildCmd       string
 }
 
@@ -315,7 +316,7 @@ func (h *Handler) reviewProposal(w http.ResponseWriter, r *http.Request, id stri
 
 		// 触发 reindex（§18.3：apply 后手动补触发）
 		if h.Index != nil {
-			if err := h.Index.Rebuild(h.VaultRoot, h.ExcludedSections); err != nil {
+			if err := h.Index.Rebuild(h.VaultRoot, h.ExcludedSections, h.VisDefault); err != nil {
 				log.Printf("reindex after apply %s failed: %v", id, err)
 			} else {
 				log.Printf("reindex after apply %s: %d notes", id, len(h.Index.Notes()))

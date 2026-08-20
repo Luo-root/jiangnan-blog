@@ -1,50 +1,265 @@
-// Package index 管理 JSON 索引与访问热度（access_count）。
+// Package index 用 SQLite 存 vault 镜像（notes / notes_fts / links / backlinks）。
 package index
 
 import (
+	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
+
+	_ "modernc.org/sqlite"
 
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/vault"
 )
 
-// Store 持有一个 vault 索引 + 访问计数。
 type Store struct {
 	mu      sync.Mutex
+	db      *sql.DB
 	path    string
 	index   *vault.Index
-	access  map[string]int       // resource_id -> 访问次数
-	lastAcc map[string]time.Time // resource_id -> 最近访问时间
+	access  map[string]int
+	lastAcc map[string]time.Time
 }
 
-// New 创建 Store（懒加载 index，访问计数从磁盘恢复）。
-func New(indexPath string) *Store {
+func Open(dbPath string) (*Store, error) {
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := db.Exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;`); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if _, err := db.Exec(schemaSQL); err != nil {
+		db.Close()
+		return nil, err
+	}
 	s := &Store{
-		path:    indexPath,
+		db:      db,
+		path:    dbPath,
 		access:  map[string]int{},
 		lastAcc: map[string]time.Time{},
 	}
-	s.loadAccess()
+	if err := s.loadAccess(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return s, nil
+}
+
+// New 兼容旧调用。失败会 panic；新代码用 Open。
+func New(dbPath string) *Store {
+	s, err := Open(dbPath)
+	if err != nil {
+		panic(err)
+	}
 	return s
 }
 
-// Rebuild 从 vault 根重建索引并写盘。
-func (s *Store) Rebuild(vaultRoot string, excluded []string) error {
-	idx, err := vault.Scan(vaultRoot, excluded)
+func (s *Store) Close() error {
+	if s.db == nil {
+		return nil
+	}
+	return s.db.Close()
+}
+
+const schemaSQL = `
+CREATE TABLE IF NOT EXISTS notes (
+  id TEXT PRIMARY KEY,
+  path TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  visibility TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  access_count INTEGER DEFAULT 0,
+  last_access_at TEXT,
+  frontmatter_json TEXT,
+  summary TEXT
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
+  id,
+  title,
+  headings,
+  body,
+  tags
+);
+CREATE TABLE IF NOT EXISTS links (
+  source_id TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  link_type TEXT NOT NULL,
+  raw TEXT,
+  PRIMARY KEY (source_id, target_id, link_type)
+);
+CREATE TABLE IF NOT EXISTS backlinks (
+  source_id TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  context TEXT,
+  PRIMARY KEY (source_id, target_id)
+);
+`
+
+func (s *Store) Rebuild(vaultRoot string, excluded []string, visDefault map[string]string) error {
+	idx, err := vault.Scan(vaultRoot, excluded, visDefault)
 	if err != nil {
 		return err
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.replaceLocked(idx); err != nil {
+		return err
+	}
 	s.index = idx
-	s.mu.Unlock()
-	return s.saveIndex()
+	return nil
 }
 
-// Notes 返回当前索引的 notes（无则空）。
+func (s *Store) replaceLocked(idx *vault.Index) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	prev := map[string]accessRow{}
+	rows, err := tx.Query(`SELECT id, access_count, last_access_at FROM notes`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var id string
+		var count int
+		var last sql.NullString
+		if err := rows.Scan(&id, &count, &last); err != nil {
+			rows.Close()
+			return err
+		}
+		r := accessRow{Count: count}
+		if last.Valid {
+			if t, err := time.Parse(time.RFC3339, last.String); err == nil {
+				r.Last = t
+			}
+		}
+		prev[id] = r
+	}
+	rows.Close()
+
+	if _, err := tx.Exec(`DELETE FROM notes`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM notes_fts`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM links`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM backlinks`); err != nil {
+		return err
+	}
+
+	insNote, err := tx.Prepare(`INSERT INTO notes(id,path,kind,title,visibility,updated_at,access_count,last_access_at,frontmatter_json,summary) VALUES(?,?,?,?,?,?,?,?,?,?)`)
+	if err != nil {
+		return err
+	}
+	defer insNote.Close()
+	insFTS, err := tx.Prepare(`INSERT INTO notes_fts(id,title,headings,body,tags) VALUES(?,?,?,?,?)`)
+	if err != nil {
+		return err
+	}
+	defer insFTS.Close()
+
+	s.access = map[string]int{}
+	s.lastAcc = map[string]time.Time{}
+	for i := range idx.Notes {
+		n := idx.Notes[i]
+		count := 0
+		var last *time.Time
+		if old, ok := prev[n.ID]; ok {
+			count = old.Count
+			if !old.Last.IsZero() {
+				t := old.Last
+				last = &t
+			}
+		}
+		s.access[n.ID] = count
+		if last != nil {
+			s.lastAcc[n.ID] = *last
+		}
+		fm, _ := json.Marshal(n.FM)
+		var lastStr interface{}
+		if last != nil {
+			lastStr = last.Format(time.RFC3339)
+		}
+		if _, err := insNote.Exec(n.ID, n.ID, n.Kind, n.Title, n.Visibility, n.UpdatedAt.Format(time.RFC3339), count, lastStr, string(fm), n.Summary); err != nil {
+			return err
+		}
+		if _, err := insFTS.Exec(n.ID, n.Title, strings.Join(n.Headings, "\n"), n.Body, strings.Join(n.Tags, " ")); err != nil {
+			return err
+		}
+	}
+
+	insLink, err := tx.Prepare(`INSERT INTO links(source_id,target_id,link_type,raw) VALUES(?,?,?,?)`)
+	if err != nil {
+		return err
+	}
+	defer insLink.Close()
+	insBL, err := tx.Prepare(`INSERT INTO backlinks(source_id,target_id,context) VALUES(?,?,?)`)
+	if err != nil {
+		return err
+	}
+	defer insBL.Close()
+	byID := map[string]vault.Note{}
+	for i := range idx.Notes {
+		byID[idx.Notes[i].ID] = idx.Notes[i]
+	}
+	for _, l := range idx.Links {
+		if _, err := insLink.Exec(l.SourceID, l.TargetID, l.LinkType, l.Raw); err != nil {
+			return err
+		}
+		ctx := ""
+		if src, ok := byID[l.SourceID]; ok {
+			ctx = vault.LinkContext(src.Body, l.Raw)
+		}
+		if _, err := insBL.Exec(l.SourceID, l.TargetID, ctx); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+type accessRow struct {
+	Count int
+	Last  time.Time
+}
+
+func (s *Store) loadAccess() error {
+	rows, err := s.db.Query(`SELECT id, access_count, last_access_at FROM notes`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var count int
+		var last sql.NullString
+		if err := rows.Scan(&id, &count, &last); err != nil {
+			return err
+		}
+		s.access[id] = count
+		if last.Valid {
+			if t, err := time.Parse(time.RFC3339, last.String); err == nil {
+				s.lastAcc[id] = t
+			}
+		}
+	}
+	return rows.Err()
+}
+
 func (s *Store) Notes() []vault.Note {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -54,7 +269,6 @@ func (s *Store) Notes() []vault.Note {
 	return s.index.Notes
 }
 
-// Projects 返回项目列表。
 func (s *Store) Projects() []vault.Project {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -64,7 +278,6 @@ func (s *Store) Projects() []vault.Project {
 	return s.index.Projects
 }
 
-// Skills 返回 skill 列表。
 func (s *Store) Skills() []vault.Skill {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -74,7 +287,6 @@ func (s *Store) Skills() []vault.Skill {
 	return s.index.Skills
 }
 
-// MCPServers 返回 mcp 列表。
 func (s *Store) MCPServers() []vault.MCPServer {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -84,7 +296,6 @@ func (s *Store) MCPServers() []vault.MCPServer {
 	return s.index.MCPS
 }
 
-// ContextPacks 返回 context pack 列表。
 func (s *Store) ContextPacks() []vault.ContextPack {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -94,111 +305,117 @@ func (s *Store) ContextPacks() []vault.ContextPack {
 	return s.index.Context
 }
 
-// Backlinks 返回 note 的反向链接列表。
+func (s *Store) NoteByID(id string) *vault.Note {
+	id = vault.NormalizeID(id)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.index == nil {
+		return nil
+	}
+	for i := range s.index.Notes {
+		if s.index.Notes[i].ID == id {
+			n := s.index.Notes[i]
+			return &n
+		}
+	}
+	return nil
+}
+
 func (s *Store) Backlinks(id string) []string {
+	id = vault.NormalizeID(id)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.index == nil || s.index.Backlinks == nil {
 		return nil
 	}
-	return s.index.Backlinks[id]
+	return append([]string(nil), s.index.Backlinks[id]...)
 }
 
-// Hit 记录一次访问，返回累计次数。
+func (s *Store) ForwardLinks(id string) []vault.Link {
+	id = vault.NormalizeID(id)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.index == nil {
+		return nil
+	}
+	var out []vault.Link
+	for _, l := range s.index.Links {
+		if l.SourceID == id {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
 func (s *Store) Hit(resourceID string) int {
+	resourceID = vault.NormalizeID(resourceID)
+	now := time.Now()
 	s.mu.Lock()
 	s.access[resourceID]++
-	s.lastAcc[resourceID] = time.Now()
+	s.lastAcc[resourceID] = now
 	count := s.access[resourceID]
+	db := s.db
 	s.mu.Unlock()
-	// 访问热度是运行时状态，立即落盘，避免服务重启丢失。
-	_ = s.SaveAccess()
+	_, _ = db.Exec(`UPDATE notes SET access_count=?, last_access_at=? WHERE id=?`, count, now.Format(time.RFC3339), resourceID)
 	return count
 }
 
-// Count 返回某资源的累计访问次数（不递增）。
 func (s *Store) Count(resourceID string) int {
+	resourceID = vault.NormalizeID(resourceID)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.access[resourceID]
 }
 
-// HotEntry 是热度排序条目。
+func (s *Store) LastAccess(resourceID string) time.Time {
+	resourceID = vault.NormalizeID(resourceID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastAcc[resourceID]
+}
+
 type HotEntry struct {
 	ResourceID string    `json:"resource_id"`
 	Count      int       `json:"count"`
 	LastAccess time.Time `json:"last_access"`
 }
 
-// Hot 返回按访问次数降序的热度列表。
 func (s *Store) Hot() []HotEntry {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
 	out := make([]HotEntry, 0, len(s.access))
 	for id, c := range s.access {
+		if c <= 0 {
+			continue
+		}
 		out = append(out, HotEntry{ResourceID: id, Count: c, LastAccess: s.lastAcc[id]})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Count > out[j].Count })
 	return out
 }
 
-// ---------------------------------------------------------------------------
-// 持久化（访问计数单独存 .workbase/index/access.json）
-// ---------------------------------------------------------------------------
-
-type accessFile struct {
-	Access map[string]int    `json:"access"`
-	Last   map[string]string `json:"last_access"`
+func (s *Store) SaveAccess() error {
+	return nil
 }
 
-func (s *Store) accessPath() string {
-	return filepath.Join(filepath.Dir(s.path), "access.json")
+func (s *Store) KindCounts() map[string]int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[string]int{}
+	if s.index == nil {
+		return out
+	}
+	for i := range s.index.Notes {
+		out[s.index.Notes[i].Kind]++
+	}
+	return out
 }
 
-func (s *Store) saveIndex() error {
+func (s *Store) Stats() (notes, projects, skills, mcps, context int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.index == nil {
-		return nil
-	}
-	os.MkdirAll(filepath.Dir(s.path), 0755)
-	b, err := json.MarshalIndent(s.index, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(s.path, b, 0644)
-}
-
-func (s *Store) loadAccess() {
-	b, err := os.ReadFile(s.accessPath())
-	if err != nil {
 		return
 	}
-	var f accessFile
-	if json.Unmarshal(b, &f) != nil {
-		return
-	}
-	s.access = f.Access
-	for id, ts := range f.Last {
-		if t, err := time.Parse(time.RFC3339, ts); err == nil {
-			s.lastAcc[id] = t
-		}
-	}
-}
-
-// SaveAccess 把访问计数写盘（进程退出前调用）。
-func (s *Store) SaveAccess() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	f := accessFile{Access: s.access, Last: map[string]string{}}
-	for id, t := range s.lastAcc {
-		f.Last[id] = t.Format(time.RFC3339)
-	}
-	os.MkdirAll(filepath.Dir(s.accessPath()), 0755)
-	b, err := json.MarshalIndent(f, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(s.accessPath(), b, 0644)
+	return len(s.index.Notes), len(s.index.Projects), len(s.index.Skills), len(s.index.MCPS), len(s.index.Context)
 }
