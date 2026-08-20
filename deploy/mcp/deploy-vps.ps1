@@ -10,8 +10,8 @@
 #   1) linux amd64 binary already built at
 #        server/mcp/.workbase/workbase-mcp-linux-amd64
 #   2) live config at deploy/mcp/config.vps.yaml
-#        (copy from config.vps.example.yaml and fill real hashes;
-#         config.vps.yaml is gitignored)
+#        (copy from config.vps.example.yaml and fill admin_auth.pass_hash;
+#         Token 不在 yaml，登录 webUI 签发；config.vps.yaml is gitignored)
 # ============================================================
 
 $ErrorActionPreference = 'Stop'

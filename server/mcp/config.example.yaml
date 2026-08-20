@@ -1,0 +1,137 @@
+# Workbase MCP Server 配置模板
+#
+# 真实 config.yaml 不入 Git（见 .gitignore）。
+# 本文件作为字段结构参考 + 部署时的复制起点。
+# 部署流程：
+#   1. 复制本文件为 config.yaml
+#   2. 把所有 REPLACE_WITH_* 占位符替换为实际值
+#   3. 用 scripts/gen-pass.sh 生成 admin 密码，SHA-256 后填到 admin_auth.pass_hash
+#   4. Token 不在 yaml，登录 webUI 后到 /settings/token 自助签发
+# 字段 schema 在 ../../SCHEMA.md §1
+# 改字段说明 → 同步改 SCHEMA.md
+
+# ============ 进程与端口 ============
+server:
+  listen: 127.0.0.1:8787       # MCP HTTP 监听
+
+admin:
+  listen: 127.0.0.1:8788       # Admin HTTP。进程 bind loopback；公开入口靠 Caddy，不要用 RemoteAddr 判断来源
+  session_ttl: 3600            # session 过期秒
+  login_rate_limit: 5          # 每分钟登录失败次数上限
+
+# ============ Vault 路径 ============
+vault:
+  root: REPLACE_WITH_VAULT_ROOT       # 如 /home/studio/workbench
+  git_dir: REPLACE_WITH_VAULT_GIT_DIR # 如 /home/studio/vault.git
+
+# config.yaml 位置：server/mcp/config.yaml（与 Go 进程同目录，相对路径解析最简）
+
+# ============ Workbase ============
+# root    = Vault 内 Registry 源（事实源：context/skills/mcps/*.md）
+# runtime = 进程运行时私有区（index/proposals/inbox/audit），相对路径或绝对路径
+workbase:
+  root: REPLACE_WITH_WORKBASE_ROOT          # 如 /home/studio/workbench/Workbase
+  runtime: ./.workbase/                     # 运行时私有区，自动拼接 index/proposals/inbox/audit
+  rebuild_cmd: REPLACE_WITH_REBUILD_CMD     # 如 /home/studio/workbase/bin/rebuild-blog.sh
+
+# ============ Admin 鉴权（单账号）============
+# 个人工作台只会有一个 admin 账号，凭证直接写 yaml
+# Token（Agent 鉴权）不在这里——它在 SQLite auth_tokens 表，webUI 自助管理
+admin_auth:
+  user: REPLACE_WITH_ADMIN_USER            # 如 admin
+  pass_hash: REPLACE_WITH_SHA256_HEX_ADMIN # SHA-256(password)，hex，无盐；单账号个人台可接受，不是通用口令方案
+
+# ============ Token 灰度（轮换 / 撤销时旧 token 的宽限期）============
+# Token 主体 = SQLite auth_tokens 表（§6.4），不在 yaml
+auth:
+  grace_period_hours: 0       # 0 = 无灰度。轮换同步改/删旧 cache；撤销 SLA ≤5s。N = 灰度 N 小时
+
+# ============ 可调参数（顶层直读）============
+inbox:
+  retention_days: 7            # done/abandoned 保留天数
+
+index:
+  access:
+    half_life_days: 7          # 艾宾浩斯半衰期
+    min_score: 0.001           # 低于此值不参与 Hot 排序
+
+knowledge:
+  search:
+    weights:                   # 留空 = 用代码内 const 默认值
+      title: 5.0
+      tags: 4.0
+      frontmatter: 3.0
+      section: 2.0
+      fulltext: 1.5
+      wikilink_backref: 2.0
+      access: 1.0
+      recency: 0.5
+    intent_bias:
+      why:     { frontmatter: 1.3, section: 1.3 }
+      when:    { recency: 1.5 }
+      entity:  { tags: 1.3 }
+      general: {}
+
+audit:
+  retention_days: 90           # 审计日志保留天数
+  recent_limit: 100            # audit.list_recent 默认返回条数
+
+# ============ schema 块：枚举 / 状态机 / 策略（结构化）============
+# 这些是结构化定义，Go 启动时 LoadConfig() 加载到内存
+# 改字段说明 → 同步改 SCHEMA.md
+schema:
+  # 可见性策略（4 档）
+  visibility_policy:
+    public:  "可公开展示与索引"
+    private: "授权 Agent 可读"
+    secret:  "默认不暴露给远程 MCP"
+    draft:   "草稿。授权 MCP 可读；search scope=all / 各 list / context.startup 收录；公开博客不发布"
+
+  # 缺省 visibility（按一级目录）
+  visibility_default:
+    文章:               public
+    项目:               public
+    友链:               public
+    部署溯源:           private
+    Workbase/context:   private
+    Workbase/skills:    private
+    Workbase/mcps:      private
+    default:            private     # 新增一级目录默认 private（安全开箱即用）
+
+  # 敏感模式。默认 [] = 关闭（不检测、不拒绝、不打码）。
+  # 个人工作台要把 Skill / MCP / 文章完整给授权 Agent，别默认开。
+  # 要开：往列表里加 regex。开启后也只警告，见 SCHEMA §21。
+  sensitive_patterns: []
+
+  # 审计最小字段集
+  audit_min_fields: [ts, tool, client_id, scopes, args_digest, result_status, duration_ms]
+
+  # 审计 result_status 取值
+  audit_result_status: [success, error, unauthorized, forbidden]
+
+  # Proposal 状态机（§17）—— conflict 可救回到 approved
+  proposal_states: [pending, approved, applied, rejected, conflict]
+  proposal_state_transitions:
+    pending:  [approved, rejected]   # 创建校验失败是控制层拒绝，不进 conflict
+    approved: [applied, conflict]    # 3-way / commit 只在 approved 之后发生
+    applied:  []
+    rejected: []
+    conflict: [approved]         # 编辑 payload 后重走 approved
+
+  # Proposal target / operation 类型
+  proposal_target_types:    [note, context_pack, project, article, skill, mcp_server]
+  proposal_operation_types: [create_file, append, append_section, patch_section, register_item]   # 枚举 = 当前能发的 = §15.7
+
+  # Inbox 状态机（§16.3）—— pending 可直接 done / abandoned（看板拖拽一步到位）
+  inbox_states: [pending, reviewing, done, abandoned]
+  inbox_state_transitions:
+    pending:   [reviewing, done, abandoned]
+    reviewing: [done, abandoned]
+    done:      []
+    abandoned: []
+
+  # 自动生成 ID 前缀。只给 proposal / inbox。
+  # notes.id = vault 相对路径（正斜杠，含 .md），不用前缀。入库 / 查询一律 ToSlash。
+  id_prefixes:
+    proposal:     "prop"
+    inbox:        "inbox"

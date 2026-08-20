@@ -32,7 +32,7 @@ sudo systemctl restart jiangnan-workbase-mcp
 
 echo "[4/6] wait for health"
 for i in 1 2 3 4 5 6 7 8 9 10; do
-  if curl -sf --max-time 2 http://127.0.0.1:8787/internal/reindex >/tmp/workbase-reindex.json; then
+  if curl -sf --max-time 2 -X POST http://127.0.0.1:8787/internal/reindex >/tmp/workbase-reindex.json; then
     echo "reindex ok: $(cat /tmp/workbase-reindex.json)"
     break
   fi

@@ -13,7 +13,7 @@ import (
 
 // Note 是 Vault 中一个 .md 文件的元数据摘要。
 type Note struct {
-	ID         string                 `json:"id"` // vault 相对路径（去 .md，正斜杠）
+	ID         string                 `json:"id"` // 旧实现去 .md；契约含 .md。不要当规格。
 	Path       string                 `json:"path"`
 	Title      string                 `json:"title"`
 	Section    string                 `json:"section"` // 一级目录（栏目）
@@ -137,6 +137,10 @@ func walkDir(vaultRoot, dir, section string, excl map[string]bool, idx *Index) {
 	}
 }
 
+// noteID 是旧实现，不要当规格。
+// 契约：notes.id = vault 相对路径，正斜杠，含 .md（如 文章/foo.md）。
+// 入库 / 查询一律 filepath.ToSlash；请求里的 \ 先归一再查。
+// 这里 TrimSuffix(rel, ".md") 和契约拧着，重构时删掉去后缀。
 func noteID(vaultRoot, abs string) string {
 	rel, err := filepath.Rel(vaultRoot, abs)
 	if err != nil {
