@@ -13,6 +13,8 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/Luo-root/jiangnan-blog/mcp/internal/config"
+	"github.com/Luo-root/jiangnan-blog/mcp/internal/search"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/vault"
 )
 
@@ -378,9 +380,19 @@ type HotEntry struct {
 	ResourceID string    `json:"resource_id"`
 	Count      int       `json:"count"`
 	LastAccess time.Time `json:"last_access"`
+	Score      float64   `json:"score"`
 }
 
-func (s *Store) Hot() []HotEntry {
+// Hot 按 SCHEMA §25 实时算分：score = count * exp(-days / half_life)。
+// halfLifeDays / minScore 由调用方传入（config 有值用 config，没有用代码默认）。
+func (s *Store) Hot(halfLifeDays, minScore float64) []HotEntry {
+	if halfLifeDays <= 0 {
+		halfLifeDays = config.DefaultAccessHalfLifeDays
+	}
+	if minScore <= 0 {
+		minScore = config.DefaultAccessMinScore
+	}
+	now := time.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]HotEntry, 0, len(s.access))
@@ -388,9 +400,19 @@ func (s *Store) Hot() []HotEntry {
 		if c <= 0 {
 			continue
 		}
-		out = append(out, HotEntry{ResourceID: id, Count: c, LastAccess: s.lastAcc[id]})
+		last := s.lastAcc[id]
+		score := search.Access(c, last, now, halfLifeDays, 1)
+		if score < minScore {
+			continue
+		}
+		out = append(out, HotEntry{ResourceID: id, Count: c, LastAccess: last, Score: score})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Count > out[j].Count })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Score == out[j].Score {
+			return out[i].ResourceID < out[j].ResourceID
+		}
+		return out[i].Score > out[j].Score
+	})
 	return out
 }
 

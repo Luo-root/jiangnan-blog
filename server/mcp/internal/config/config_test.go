@@ -70,6 +70,21 @@ func TestLoadRequiredFields(t *testing.T) {
 	if !strings.Contains(c.IndexDB(), "notes.sqlite") {
 		t.Fatalf("index db path = %s", c.IndexDB())
 	}
+	if !strings.Contains(c.AuditDB(), "audit.sqlite") {
+		t.Fatalf("audit db path = %s", c.AuditDB())
+	}
+	if c.Index.Access.HalfLifeDays != DefaultAccessHalfLifeDays {
+		t.Fatalf("half_life fallback = %v", c.Index.Access.HalfLifeDays)
+	}
+	if c.Index.Access.MinScore != DefaultAccessMinScore {
+		t.Fatalf("min_score fallback = %v", c.Index.Access.MinScore)
+	}
+	if c.Audit.RecentLimit != DefaultAuditRecentLimit {
+		t.Fatalf("audit recent_limit fallback = %d", c.Audit.RecentLimit)
+	}
+	if c.Audit.RetentionDays != DefaultAuditRetentionDays {
+		t.Fatalf("audit retention fallback = %d", c.Audit.RetentionDays)
+	}
 }
 
 func TestLoadMissingVisibilityPolicy(t *testing.T) {

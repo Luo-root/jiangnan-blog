@@ -100,8 +100,8 @@ func (c *Config) ProposalsDir() string { return filepath.Join(c.Workbase.Runtime
 func (c *Config) IndexDB() string {
 	return filepath.Join(c.Workbase.Runtime, "index", "notes.sqlite")
 }
-func (c *Config) AuditFile() string {
-	return filepath.Join(c.Workbase.Runtime, "audit", "audit.jsonl")
+func (c *Config) AuditDB() string {
+	return filepath.Join(c.Workbase.Runtime, "audit", "audit.sqlite")
 }
 func (c *Config) AuthDB() string { return filepath.Join(c.Workbase.Runtime, "auth.sqlite") }
 
@@ -111,7 +111,7 @@ func (c *Config) RuntimeDirs() []string {
 		filepath.Dir(c.IndexDB()),
 		c.ProposalsDir(),
 		c.InboxDir(),
-		filepath.Dir(c.AuditFile()),
+		filepath.Dir(c.AuditDB()),
 	}
 }
 

@@ -1,9 +1,11 @@
 package index
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestRebuildSQLiteAndIDs(t *testing.T) {
@@ -62,5 +64,54 @@ func TestRebuildSQLiteAndIDs(t *testing.T) {
 	}
 	if s.Count("文章/hello.md") != 1 {
 		t.Fatal("access should survive rebuild")
+	}
+}
+
+func TestHotScoreOrderAndMinScore(t *testing.T) {
+	vaultDir := t.TempDir()
+	must := func(rel, body string) {
+		p := filepath.Join(vaultDir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	must("文章/fresh.md", "# Fresh\n")
+	must("文章/stale.md", "# Stale\n")
+	must("文章/cold.md", "# Cold\n")
+	s, err := Open(filepath.Join(t.TempDir(), "notes.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if err := s.Rebuild(vaultDir, nil, map[string]string{"文章": "public", "default": "private"}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 10; i++ {
+		s.Hit("文章/fresh.md")
+		s.Hit("文章/stale.md")
+	}
+	s.mu.Lock()
+	s.lastAcc["文章/stale.md"] = time.Now().Add(-7 * 24 * time.Hour)
+	s.lastAcc["文章/cold.md"] = time.Now().Add(-70 * 24 * time.Hour)
+	s.access["文章/cold.md"] = 1
+	s.mu.Unlock()
+
+	hot := s.Hot(7, 0.001)
+	if len(hot) < 2 {
+		t.Fatalf("hot = %+v", hot)
+	}
+	if hot[0].ResourceID != "文章/fresh.md" {
+		t.Fatalf("want fresh first, got %+v", hot)
+	}
+	if math.Abs(hot[1].Score-10/math.E) > 0.05 {
+		t.Fatalf("stale score = %v want ~%v", hot[1].Score, 10/math.E)
+	}
+	for _, h := range hot {
+		if h.ResourceID == "文章/cold.md" {
+			t.Fatalf("cold should be below min_score, got %+v", h)
+		}
 	}
 }

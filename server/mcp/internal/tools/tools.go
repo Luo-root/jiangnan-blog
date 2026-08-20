@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -224,9 +225,12 @@ func Register(srv *server.MCPServer, d Deps) {
 	), r.handleInboxGet)
 
 	srv.AddTool(mcp.NewTool("audit.list_recent",
-		mcp.WithDescription("查看最近工具调用审计（detail=含目标 id, hashed=含内容 SHA-256）。"),
-		mcp.WithString("mode", mcp.Description("detail | hashed，默认 detail。")),
-		mcp.WithNumber("limit", mcp.Description("返回条数（默认 20，最大 200）。")),
+		mcp.WithDescription("查看最近工具调用审计。不返回 token 原文、args 原文。"),
+		mcp.WithNumber("limit", mcp.Description("返回条数，默认 100。")),
+		mcp.WithString("since", mcp.Description("RFC3339 时间下限。")),
+		mcp.WithString("tool", mcp.Description("工具名过滤。")),
+		mcp.WithString("client_id", mcp.Description("客户端过滤。")),
+		mcp.WithString("result_status", mcp.Description("success / error / unauthorized / forbidden / all。省略 = all。")),
 	), r.handleAuditListRecent)
 }
 
@@ -267,30 +271,58 @@ func fmStr(fm map[string]interface{}, key string) string {
 }
 
 func (r *depsHolder) handleAuditListRecent(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	mode := req.GetString("mode", "detail")
-	limit := req.GetInt("limit", 20)
-	if limit > 200 {
-		limit = 200
+	limit := req.GetInt("limit", 0)
+	sinceStr := req.GetString("since", "")
+	tool := req.GetString("tool", "")
+	clientID := req.GetString("client_id", "")
+	status := req.GetString("result_status", "")
+	switch status {
+	case "", "all", "success", "error", "unauthorized", "forbidden":
+	default:
+		return mcp.NewToolResultError("invalid_argument: result_status"), nil
 	}
-	entries := r.d.Audit.List(mode, limit)
-	type out struct {
-		Time        string `json:"time"`
-		Op          string `json:"op"`
-		Scope       string `json:"scope"`
-		ClientID    string `json:"client_id,omitempty"`
-		TargetID    string `json:"target_id,omitempty"`
-		ContentHash string `json:"content_hash,omitempty"`
+	var since time.Time
+	if sinceStr != "" {
+		t, err := time.Parse(time.RFC3339Nano, sinceStr)
+		if err != nil {
+			t, err = time.Parse(time.RFC3339, sinceStr)
+		}
+		if err != nil {
+			return mcp.NewToolResultError("invalid_argument: since"), nil
+		}
+		since = t
 	}
-	result := make([]out, 0, len(entries))
+	entries := r.d.Audit.List(audit.Filter{
+		Limit:        limit,
+		Since:        since,
+		Tool:         tool,
+		ClientID:     clientID,
+		ResultStatus: status,
+	})
+	out := make([]map[string]any, 0, len(entries))
 	for _, e := range entries {
-		result = append(result, out{
-			Time:        e.Time.Format("2006-01-02T15:04:05Z07:00"),
-			Op:          e.Op,
-			Scope:       e.Scope,
-			ClientID:    e.ClientID,
-			TargetID:    e.TargetID,
-			ContentHash: e.ContentHash,
-		})
+		item := map[string]any{
+			"ts":            e.TS.UTC().Format(time.RFC3339Nano),
+			"tool":          e.Tool,
+			"client_id":     e.ClientID,
+			"scopes":        e.Scopes,
+			"args_digest":   e.ArgsDigest,
+			"result_status": e.ResultStatus,
+			"duration_ms":   e.DurationMS,
+		}
+		if e.Error != "" {
+			item["error"] = e.Error
+		}
+		if e.TargetPath != "" {
+			item["target_path"] = e.TargetPath
+		}
+		if e.Commit != "" {
+			item["commit"] = e.Commit
+		}
+		if e.BaseCommit != "" {
+			item["base_commit"] = e.BaseCommit
+		}
+		out = append(out, item)
 	}
-	return jsonResult(map[string]any{"entries": result}), nil
+	return jsonResult(map[string]any{"entries": out}), nil
 }

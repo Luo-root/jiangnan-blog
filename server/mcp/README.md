@@ -11,8 +11,8 @@
 | 模板 | [`config.example.yaml`](config.example.yaml) | 可启动的字段结构 |
 | 自描述 | `D:/Data/工作台/Workbase/` | Agent 看到的文案 |
 
-骨架已按契约落地：`Load` 读 `schema:` 块、8 个标准 scope、`workbase.identity`、`{runtime}/auth.sqlite`、`/internal/reindex` 不靠 `RemoteAddr`。  
-还没改、不要当规格：默认 9 条敏感正则、payload 当 ours、`noteID()` 去 `.md` 后缀、JSON index（后续 PR 换成 SQLite notes）。进程等索引 / 写路径重构后再启。
+契约已按 PR 落地：`schema:` 配置、identity、Token SQLite、reindex mux、索引 SQLite 读路径、完整 ours 3-way / apply 分阶、热度 `Hot()`、审计 SQLite。  
+不要把旧规格当现行：默认 9 条敏感正则、payload 当 ours、`noteID()` 去 `.md`、JSONL 审计、按 count 排热度。进程等这些 PR 合进 main 后再启。
 
 ---
 
@@ -164,7 +164,9 @@ mcp.<domain> {
 
 索引单表 + `kind` 隔离。不开 projects / skills / mcps / contexts 分表。都不进 Vault / Git。
 
-热度：`score = access_count * exp(-elapsed_days / half_life_days)`，默认半衰期 7 天。
+热度：`Hot(halfLifeDays, minScore)` 实时算 `score = access_count * exp(-elapsed_days / half_life_days)`，按 score 降序；`score < min_score` 不进榜。默认半衰期 7 天、`min_score=0.001`。调用方从 config 传入。
+
+审计：`{runtime}/audit/audit.sqlite` 的 `audit_log`。中间件在 `next()` 之后记；unauthorized / forbidden 也写。最小字段 ts / tool / client_id / scopes（实际授予）/ args_digest / result_status / duration_ms。不存 token 原文、args 原文、secret 正文。`audit.list_recent` 用 limit / since / tool / client_id / result_status 过滤，没有 `mode=detail|hashed`。
 
 ## 10. 本地跑（重构完成后）
 
