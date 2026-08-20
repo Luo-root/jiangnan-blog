@@ -6,16 +6,26 @@ import { InboxPage } from "./workspace/inbox";
 import { ProposalsPage } from "./workspace/proposals";
 import { ProposalDetailPage } from "./workspace/proposal-detail";
 import { AccessPage } from "./workspace/access";
+import { AuditPage } from "./workspace/audit";
+import { SearchPage } from "./workspace/search";
 import { TokenPage } from "./settings/token";
+import { SystemPage } from "./settings/system";
+import { GitPage } from "./settings/git";
+import { TemplatesPage } from "./settings/templates";
 
 const NAV = [
   { group: "Workspace", items: [
     { href: "/workspace/inbox", label: "待办看板" },
     { href: "/workspace/proposal", label: "Proposal" },
     { href: "/workspace/access", label: "访问热度" },
+    { href: "/workspace/audit", label: "审计日志" },
+    { href: "/workspace/search", label: "知识搜索" },
   ]},
   { group: "Settings", items: [
     { href: "/settings/token", label: "Token" },
+    { href: "/settings/system", label: "System" },
+    { href: "/settings/git", label: "Git" },
+    { href: "/settings/templates", label: "模板" },
   ]},
 ];
 
@@ -28,8 +38,13 @@ export function Shell({ path }: { path: string }) {
   else if (path === "/workspace/proposal") page = <ProposalsPage />;
   else if (detailMatch) page = <ProposalDetailPage id={decodeURIComponent(detailMatch[1])} />;
   else if (path === "/workspace/access") page = <AccessPage />;
+  else if (path === "/workspace/audit") page = <AuditPage />;
+  else if (path === "/workspace/search") page = <SearchPage />;
   else if (path === "/settings/token") page = <TokenPage />;
-  else page = <p className="text-sm text-ink-3">没有这个页面。本条 PR 落地登录 + inbox / proposal / access / token。</p>;
+  else if (path === "/settings/system") page = <SystemPage />;
+  else if (path === "/settings/git") page = <GitPage />;
+  else if (path === "/settings/templates") page = <TemplatesPage />;
+  else page = <p className="text-sm text-ink-3">没有这个页面。</p>;
 
   return (
     <div className="flex h-full min-w-[960px]">

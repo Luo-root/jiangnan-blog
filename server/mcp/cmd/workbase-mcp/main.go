@@ -138,6 +138,16 @@ func main() {
 		RebuildCmd:       cfg.Workbase.RebuildCmd,
 		HalfLifeDays:     cfg.Index.Access.HalfLifeDays,
 		MinScore:         cfg.Index.Access.MinScore,
+		Audit:            auditStore,
+		SearchWeights:    cfg.Knowledge.Search.Weights,
+		StartedAt:        time.Now(),
+		MCPListen:        cfg.Server.Listen,
+		AdminListen:      cfg.Admin.Listen,
+		RuntimeDir:       cfg.Workbase.Runtime,
+		IndexDB:          cfg.IndexDB(),
+		AuditDB:          cfg.AuditDB(),
+		AuthDB:           cfg.AuthDB(),
+		TemplatesDir:     cfg.TemplatesDir(),
 	}
 	adminSrv := &http.Server{Addr: cfg.Admin.Listen, Handler: adminHandler}
 

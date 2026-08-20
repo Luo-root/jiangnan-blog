@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../../lib/api";
 import { navigate } from "../../lib/nav";
+import { DiffViewer } from "../../components/diff-viewer";
 
 type Proposal = {
   id: string;
@@ -24,6 +25,17 @@ export function ProposalDetailPage({ id }: { id: string }) {
   const [content, setContent] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [original, setOriginal] = useState("");
+
+  async function loadOriginal(path: string) {
+    if (!path) { setOriginal(""); return; }
+    try {
+      const n = await api<{ body?: string }>(`/api/knowledge?id=${encodeURIComponent(path)}`);
+      setOriginal(n.body || "");
+    } catch {
+      setOriginal("");
+    }
+  }
 
   async function reload() {
     const got = await api<Proposal>("/api/proposals/" + encodeURIComponent(id));
@@ -33,6 +45,7 @@ export function ProposalDetailPage({ id }: { id: string }) {
     setSection(got.operation?.section || "");
     setTarget(got.target?.path || "");
     setContent(got.payload?.content || "");
+    await loadOriginal(got.target?.path || "");
   }
   useEffect(() => { reload().catch((e) => setError(String(e))); }, [id]);
 
@@ -82,6 +95,11 @@ export function ProposalDetailPage({ id }: { id: string }) {
         <Field label="Payload">
           <textarea className="min-h-48 w-full rounded-lg border border-border px-3 py-2 font-mono text-sm" value={content} onChange={(e) => setContent(e.target.value)} />
         </Field>
+      </div>
+
+      <div className="mt-5">
+        <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-ink-4">Diff</div>
+        <DiffViewer before={original} after={content} />
       </div>
 
       {p.receipt?.conflict_regions?.length ? (

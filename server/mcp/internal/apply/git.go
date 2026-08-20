@@ -4,8 +4,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
+
+type LogEntry struct {
+	SHA     string `json:"sha"`
+	Author  string `json:"author"`
+	Date    string `json:"date"`
+	Subject string `json:"subject"`
+}
 
 func Head(gitDir string) string {
 	if gitDir == "" {
@@ -88,6 +96,43 @@ func MergeFile(ours, base, other string) (merged string, conflict bool, err erro
 		return text, true, nil
 	}
 	return text, false, nil
+}
+
+func Log(gitDir string, limit int) ([]LogEntry, error) {
+	if gitDir == "" {
+		return []LogEntry{}, nil
+	}
+	if limit <= 0 {
+		limit = 30
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	out, err := runGit(gitDir, "", "log", "-n", strconv.Itoa(limit), "--pretty=format:%H%x09%an%x09%aI%x09%s")
+	if err != nil {
+		return nil, err
+	}
+	if out == "" {
+		return []LogEntry{}, nil
+	}
+	lines := strings.Split(out, "\n")
+	commits := make([]LogEntry, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		parts := strings.SplitN(line, "\t", 4)
+		if len(parts) < 4 {
+			continue
+		}
+		commits = append(commits, LogEntry{SHA: parts[0], Author: parts[1], Date: parts[2], Subject: parts[3]})
+	}
+	return commits, nil
+}
+
+func Patch(gitDir, commit string) (string, error) {
+	if gitDir == "" || commit == "" {
+		return "", os.ErrInvalid
+	}
+	return runGit(gitDir, "", "show", "--stat", "--patch", "--format=fuller", "--no-color", commit)
 }
 
 func runGit(gitDir, workTree string, args ...string) (string, error) {

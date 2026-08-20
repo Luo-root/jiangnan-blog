@@ -11,7 +11,7 @@
 | 模板 | [`config.example.yaml`](config.example.yaml) | 可启动的字段结构 |
 | 自描述 | `D:/Data/工作台/Workbase/` | Agent 看到的文案 |
 
-契约已按 PR 落地：`schema:` 配置、identity、Token SQLite、reindex mux、索引 SQLite 读路径、完整 ours 3-way / apply 分阶、热度 `Hot()`、审计 SQLite、webUI session 登录。  
+契约已按 PR 落地：`schema:` 配置、identity、Token SQLite、reindex mux、索引 SQLite 读路径、完整 ours 3-way / apply 分阶、热度 `Hot()`、审计 SQLite、webUI session 登录、audit / knowledge / system / git / templates 后台页。  
 不要把旧规格当现行：默认 9 条敏感正则、payload 当 ours、`noteID()` 去 `.md`、JSONL 审计、按 count 排热度、浏览器弹窗 Basic Auth。进程等这些 PR 合进 main 后再启。
 
 ---
