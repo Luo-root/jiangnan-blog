@@ -27,7 +27,7 @@
 
 ## Patterns / Constraints
 - Workbase MCP 内容类型只有 `context/` / `skills/` / `mcps/`。不要再建 `Workbase/conventions/` 或 `Workbase/policies/`：工程规范写进 context pack，Git 流程写进 skill，可见性规则只放 `config.yaml` 的 `schema.visibility_policy` / `schema.visibility_default`。Workbase 下其它路径如果出现 md，indexer 当普通 private note，不是第四种 registry。
-- MCP 实现以 `SCHEMA.md` + `docs/agent-workbase-mcp-v0.1.md` + `server/mcp/README.md` 为准。骨架、索引读路径、写路径 3-way / apply 分阶 / 敏感 warning、热度 `Hot()` 与审计 SQLite 已按契约落地。不要把旧 `noteID()` / payload-as-ours / 默认敏感正则 / JSONL 审计 / 按 count 排热度当规格。
+- MCP 实现以 `SCHEMA.md` + `docs/agent-workbase-mcp-v0.1.md` + `server/mcp/README.md` 为准。骨架、索引读路径、写路径 3-way / apply 分阶 / 敏感 warning、热度 `Hot()` 与审计 SQLite、webUI session 登录已按契约落地。不要把旧 `noteID()` / payload-as-ours / 默认敏感正则 / JSONL 审计 / 按 count 排热度 / HTTP Basic Auth 当规格。
 - 用户要求保留 Obsidian 图谱关系与附件引用完整性：WikiLink 双向链接 + 反向链接区 + 可视化图谱
 - 内容可替换：用户将 .md 文件放入 `D:/Data/工作台/文章/`（或通过 Obsidian 直接编辑）即可自动解析，刷新或重新构建可见
 - 设计方向：水墨国风 × 科技感。「墨分五色」ink-1~ink-5 token（浅色=焦浓重淡清墨阶，深色=月白墨韵反转）+ 宣纸/玄黑底（oklch 双套）；国风工具类 `.seal`/`.vertical-text`/`.hairline`/`.hairline-y`/`.huawen`（回纹 mask）/`.ink-blot`（墨晕）/`.paper-grain`（纸纹）/`.dot-grid` 定义在 styles.css @layer utilities；山水剪影组件 `src/components/ink-mountains.tsx`（三层 fill-ink-* 路径，用 mask 渐隐溶入底色）；日期/标签/统计数字一律 font-mono；文章卡片去卡片化：册页式 row/compact/featured 变体，中文数字编号（壹贰叁…）

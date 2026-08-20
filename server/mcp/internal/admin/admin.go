@@ -2,9 +2,7 @@
 package admin
 
 import (
-	"crypto/sha256"
 	"embed"
-	"encoding/hex"
 	"encoding/json"
 	"io/fs"
 	"log"
@@ -32,6 +30,8 @@ type Handler struct {
 	Tokens           *auth.Store
 	AdminUser        string
 	AdminPassHash    string
+	Sessions         *SessionStore
+	Limiter          *LoginLimiter
 	VaultRoot        string
 	GitDir           string
 	ExcludedSections []string
@@ -43,15 +43,7 @@ type Handler struct {
 
 // ServeHTTP 路由分发。
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// admin 认证（独立于 MCP Bearer token，§21.5）
-	// OPTIONS 预检请求跳过认证（浏览器不会在预检时带 Authorization）
-	if r.Method != http.MethodOptions && h.AdminUser != "" && !h.checkAdminAuth(r) {
-		w.Header().Set("WWW-Authenticate", `Basic realm="Workbase Admin"`)
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-		return
-	}
-
-	// CORS（开发期开放）
+	// CORS（开发期开放）。登录页是独立 session，不用浏览器弹窗 Basic Auth。
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type,Authorization")
@@ -63,7 +55,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	path := strings.TrimPrefix(r.URL.Path, "/")
 
+	if strings.HasPrefix(path, "api/") && !isPublicAPI(path, r.Method) {
+		if _, ok := h.sessionUser(r); !ok {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			return
+		}
+	}
+
 	switch {
+	case path == "api/admin/login" && r.Method == http.MethodPost:
+		h.login(w, r)
+	case path == "api/admin/refresh" && r.Method == http.MethodPost:
+		h.refresh(w, r)
+	case path == "api/admin/logout" && r.Method == http.MethodPost:
+		h.logout(w, r)
+	case path == "api/admin/me" && r.Method == http.MethodGet:
+		h.me(w, r)
 	case path == "" || path == "index.html":
 		h.serveStatic(w, r)
 	case path == "api/inbox" && r.Method == http.MethodGet:
@@ -104,21 +111,27 @@ func (h *Handler) serveStatic(w http.ResponseWriter, r *http.Request) {
 	if p == "" {
 		p = "index.html"
 	}
+	served := p
 	b, err := fs.ReadFile(staticFS, "static/"+p)
 	if err != nil {
-		// SPA fallback
 		b, err = fs.ReadFile(staticFS, "static/index.html")
 		if err != nil {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
+		served = "index.html"
 	}
-	if strings.HasSuffix(p, ".html") {
+	switch {
+	case strings.HasSuffix(served, ".html"):
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	} else if strings.HasSuffix(p, ".js") {
+	case strings.HasSuffix(served, ".js"):
 		w.Header().Set("Content-Type", "application/javascript")
-	} else if strings.HasSuffix(p, ".css") {
+	case strings.HasSuffix(served, ".css"):
 		w.Header().Set("Content-Type", "text/css")
+	case strings.HasSuffix(served, ".svg"):
+		w.Header().Set("Content-Type", "image/svg+xml")
+	case strings.HasSuffix(served, ".woff2"):
+		w.Header().Set("Content-Type", "font/woff2")
 	}
 	w.Write(b)
 }
@@ -128,10 +141,17 @@ func (h *Handler) serveStatic(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 func (h *Handler) listInbox(w http.ResponseWriter, r *http.Request) {
+	if h.Inbox == nil {
+		writeJSON(w, http.StatusOK, []inbox.Summary{})
+		return
+	}
 	items, err := h.Inbox.List()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
+	}
+	if items == nil {
+		items = []inbox.Summary{}
 	}
 	writeJSON(w, http.StatusOK, items)
 }
@@ -190,7 +210,14 @@ func (h *Handler) updateInbox(w http.ResponseWriter, r *http.Request, id string)
 // ---------------------------------------------------------------------------
 
 func (h *Handler) getHeat(w http.ResponseWriter, r *http.Request) {
+	if h.Index == nil {
+		writeJSON(w, http.StatusOK, []index.HotEntry{})
+		return
+	}
 	hot := h.Index.Hot(h.HalfLifeDays, h.MinScore)
+	if hot == nil {
+		hot = []index.HotEntry{}
+	}
 	writeJSON(w, http.StatusOK, hot)
 }
 
@@ -199,10 +226,17 @@ func (h *Handler) getHeat(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 func (h *Handler) listProposals(w http.ResponseWriter, r *http.Request) {
+	if h.Proposal == nil {
+		writeJSON(w, http.StatusOK, []proposal.Proposal{})
+		return
+	}
 	props, err := h.Proposal.List()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
+	}
+	if props == nil {
+		props = []proposal.Proposal{}
 	}
 	writeJSON(w, http.StatusOK, props)
 }
@@ -365,17 +399,6 @@ func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(v)
-}
-
-// checkAdminAuth 验证 HTTP Basic Auth。
-func (h *Handler) checkAdminAuth(r *http.Request) bool {
-	user, pass, ok := r.BasicAuth()
-	if !ok || user != h.AdminUser {
-		return false
-	}
-	sum := sha256.Sum256([]byte(pass))
-	hash := hex.EncodeToString(sum[:])
-	return hash == h.AdminPassHash
 }
 
 type createTokenReq struct {

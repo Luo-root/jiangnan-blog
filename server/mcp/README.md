@@ -11,8 +11,8 @@
 | 模板 | [`config.example.yaml`](config.example.yaml) | 可启动的字段结构 |
 | 自描述 | `D:/Data/工作台/Workbase/` | Agent 看到的文案 |
 
-契约已按 PR 落地：`schema:` 配置、identity、Token SQLite、reindex mux、索引 SQLite 读路径、完整 ours 3-way / apply 分阶、热度 `Hot()`、审计 SQLite。  
-不要把旧规格当现行：默认 9 条敏感正则、payload 当 ours、`noteID()` 去 `.md`、JSONL 审计、按 count 排热度。进程等这些 PR 合进 main 后再启。
+契约已按 PR 落地：`schema:` 配置、identity、Token SQLite、reindex mux、索引 SQLite 读路径、完整 ours 3-way / apply 分阶、热度 `Hot()`、审计 SQLite、webUI session 登录。  
+不要把旧规格当现行：默认 9 条敏感正则、payload 当 ours、`noteID()` 去 `.md`、JSONL 审计、按 count 排热度、浏览器弹窗 Basic Auth。进程等这些 PR 合进 main 后再启。
 
 ---
 
@@ -178,7 +178,15 @@ go run ./cmd/workbase-mcp -config config.yaml
 ```
 
 - MCP：`127.0.0.1:8787`
-- Admin：`127.0.0.1:8788`（独立 session，不用浏览器 Basic Auth）
+- Admin：`127.0.0.1:8788`（独立登录页 + session token，不用浏览器 Basic Auth）
+
+改后台前端：
+
+```powershell
+cd D:\Code\Front-end\博客\server\mcp\admin
+npm install
+npm run build   # 产出写入 ../internal/admin/static，由 Go embed
+```
 
 VPS 部署见 [`../../deploy/mcp/`](../../deploy/mcp/) 与 [`../../deploy/README.md`](../../deploy/README.md)。  
 重构完成前不要把这份旧 binary 当可用 MCP。
