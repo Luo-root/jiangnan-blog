@@ -189,8 +189,8 @@
       </div>
 
       <div class="view" id="view-heat">
-        <div class="view-head"><div><h3>访问热度</h3><p>读取次数越高的资源排序越靠前，用于观察 Workbase 的实际使用信号。</p></div></div>
-        <div class="stat-grid"><div class="stat"><div class="label">资源总数</div><div class="value" id="heat-total">—</div></div><div class="stat"><div class="label">最高访问</div><div class="value" id="heat-max">—</div></div><div class="stat"><div class="label">累计读取</div><div class="value" id="heat-sum">—</div></div></div>
+        <div class="view-head"><div><h3>访问热度</h3><p>按艾宾浩斯曲线 score = count × exp(-days / half_life) 实时排序，长期未访问会掉出榜。</p></div></div>
+        <div class="stat-grid"><div class="stat"><div class="label">上榜资源</div><div class="value" id="heat-total">—</div></div><div class="stat"><div class="label">最高 score</div><div class="value" id="heat-max">—</div></div><div class="stat"><div class="label">累计读取</div><div class="value" id="heat-sum">—</div></div></div>
         <div class="heat-panel"><div id="heat-list"></div></div>
       </div>
 
@@ -321,13 +321,13 @@ document.querySelectorAll('.col').forEach(col => {
 async function loadHeat() {
   const hot = await api('/api/heat');
   const total = hot.reduce((n, x) => n + (x.count || 0), 0);
-  const max = hot[0]?.count || 0;
+  const max = hot[0]?.score || 0;
   document.getElementById('heat-total').textContent = hot.length;
-  document.getElementById('heat-max').textContent = max;
+  document.getElementById('heat-max').textContent = max ? max.toFixed(3) : 0;
   document.getElementById('heat-sum').textContent = total;
   const el = document.getElementById('heat-list');
   if (!hot.length) { el.innerHTML = '<div class="empty">暂无访问记录</div>'; return; }
-  el.innerHTML = hot.slice(0, 50).map(h => `<div class="heat-row"><div class="label" title="${escapeHtml(h.resource_id)}">${escapeHtml(h.resource_id)}</div><div class="bar-wrap"><div class="bar" style="width:${Math.round((h.count / max) * 100)}%"></div></div><div class="num">${h.count}</div></div>`).join('');
+  el.innerHTML = hot.slice(0, 50).map(h => `<div class="heat-row"><div class="label" title="${escapeHtml(h.resource_id)}">${escapeHtml(h.resource_id)}</div><div class="bar-wrap"><div class="bar" style="width:${max ? Math.round((h.score / max) * 100) : 0}%"></div></div><div class="num">${(h.score || 0).toFixed(3)}</div></div>`).join('');
 }
 
 // --- Proposal：查看 → 编辑 → 审批（设计文档 §21.5「同意 / 编辑后同意 / 拒绝」） ---

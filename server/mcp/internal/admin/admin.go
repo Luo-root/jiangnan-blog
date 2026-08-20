@@ -37,6 +37,8 @@ type Handler struct {
 	ExcludedSections []string
 	VisDefault       map[string]string
 	RebuildCmd       string
+	HalfLifeDays     float64
+	MinScore         float64
 }
 
 // ServeHTTP 路由分发。
@@ -188,7 +190,7 @@ func (h *Handler) updateInbox(w http.ResponseWriter, r *http.Request, id string)
 // ---------------------------------------------------------------------------
 
 func (h *Handler) getHeat(w http.ResponseWriter, r *http.Request) {
-	hot := h.Index.Hot()
+	hot := h.Index.Hot(h.HalfLifeDays, h.MinScore)
 	writeJSON(w, http.StatusOK, hot)
 }
 

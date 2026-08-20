@@ -54,7 +54,12 @@ func main() {
 		log.Fatalf("init proposal: %v", err)
 	}
 
-	auditStore := audit.New(cfg.AuditFile(), 2000)
+	auditStore, err := audit.Open(cfg.AuditDB(), cfg.Audit.RetentionDays, cfg.Audit.RecentLimit)
+	if err != nil {
+		log.Fatalf("init audit: %v", err)
+	}
+	defer auditStore.Close()
+
 	idx, err := index.Open(cfg.IndexDB())
 	if err != nil {
 		log.Fatalf("init index: %v", err)
@@ -129,6 +134,8 @@ func main() {
 		ExcludedSections: excludedSections,
 		VisDefault:       cfg.Schema.VisibilityDefault,
 		RebuildCmd:       cfg.Workbase.RebuildCmd,
+		HalfLifeDays:     cfg.Index.Access.HalfLifeDays,
+		MinScore:         cfg.Index.Access.MinScore,
 	}
 	adminSrv := &http.Server{Addr: cfg.Admin.Listen, Handler: adminHandler}
 
@@ -193,34 +200,107 @@ func bearerHTTPAuth(a *auth.Store, next http.Handler) http.Handler {
 func authAuditMiddleware(a *auth.Store, ad *audit.Store) server.ToolHandlerMiddleware {
 	return func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 		return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			started := time.Now()
 			toolName := req.Params.Name
 			scope := tools.RequiredScope(toolName)
+			digest := audit.Digest(auditRawArgs(req))
+			target := auditTargetPath(req)
+
+			record := func(status, clientID, errMsg string, scopes []string) {
+				ad.Append(audit.Entry{
+					Tool:         toolName,
+					ClientID:     clientID,
+					Scopes:       scopes,
+					ArgsDigest:   digest,
+					ResultStatus: status,
+					DurationMS:   int(time.Since(started).Milliseconds()),
+					Error:        errMsg,
+					TargetPath:   target,
+				})
+			}
 
 			ac, ok := auth.FromContext(ctx)
 			if !ok {
 				var err error
 				ac, err = a.AuthenticateHeader(req.Header)
 				if err != nil {
+					record("unauthorized", "", "unauthorized", nil)
 					return mcp.NewToolResultError("unauthorized: missing or invalid bearer token"), nil
 				}
 				ctx = auth.WithAuth(ctx, ac)
 			}
 			if scope != "" && !ac.HasScope(scope) {
+				record("forbidden", ac.ClientID, "forbidden", ac.Scopes)
 				return mcp.NewToolResultErrorf("forbidden: tool %q requires scope %q", toolName, scope), nil
 			}
 
-			raw := string(req.Params.RawArguments)
-			if raw == "" {
-				if b, err := json.Marshal(req.Params.Arguments); err == nil {
-					raw = string(b)
-				}
+			res, err := next(ctx, req)
+			status := "success"
+			errMsg := ""
+			if err != nil {
+				status = "error"
+				errMsg = clipAuditError(err.Error())
+			} else if res != nil && res.IsError {
+				status = "error"
+				errMsg = clipAuditError(toolErrorText(res))
 			}
-			targetID := req.GetString("id", "")
-			if targetID == "" {
-				targetID = req.GetString("query", "")
-			}
-			ad.Append(toolName, scope, ac.ClientID, targetID, raw)
-			return next(ctx, req)
+			record(status, ac.ClientID, errMsg, ac.Scopes)
+			return res, err
 		}
 	}
+}
+
+func auditRawArgs(req mcp.CallToolRequest) string {
+	raw := string(req.Params.RawArguments)
+	if raw != "" {
+		return raw
+	}
+	if b, err := json.Marshal(req.Params.Arguments); err == nil {
+		return string(b)
+	}
+	return ""
+}
+
+func auditTargetPath(req mcp.CallToolRequest) string {
+	if id := req.GetString("id", ""); id != "" {
+		return id
+	}
+	args := req.GetArguments()
+	if args == nil {
+		return ""
+	}
+	target, ok := args["target"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	if p, ok := target["path"].(string); ok && p != "" {
+		return p
+	}
+	if id, ok := target["id"].(string); ok {
+		return id
+	}
+	return ""
+}
+
+func toolErrorText(res *mcp.CallToolResult) string {
+	if res == nil {
+		return ""
+	}
+	for _, c := range res.Content {
+		switch v := c.(type) {
+		case mcp.TextContent:
+			return v.Text
+		case *mcp.TextContent:
+			return v.Text
+		}
+	}
+	return ""
+}
+
+func clipAuditError(s string) string {
+	const max = 300
+	if len(s) <= max {
+		return s
+	}
+	return s[:max]
 }

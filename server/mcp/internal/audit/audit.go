@@ -1,146 +1,231 @@
-// Package audit 记录工具调用审计（op + 时间 + scope + 目标/哈希）。
+// Package audit 把工具调用记进 SQLite（SCHEMA §20 / 设计 §20.3）。
 //
-// v0.1 最小实现：JSONL 追加写 + 内存缓存最近条目。
-// detail 模式返回目标 id；hashed 模式返回内容哈希，都不含正文/查询原文。
+// 最小字段集：ts / tool / client_id / scopes / args_digest / result_status / duration_ms。
+// 不存 token 原文、token hash、args 原文、secret 正文。
 package audit
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"sort"
+	"strings"
 	"sync"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
-// Entry 是一条审计记录。
 type Entry struct {
-	Time        time.Time `json:"time"`
-	Op          string    `json:"op"`                     // 工具名，如 knowledge.get
-	Scope       string    `json:"scope"`                  // 所需 scope
-	ClientID    string    `json:"client_id,omitempty"`    // 调用方 id
-	TargetID    string    `json:"target_id,omitempty"`    // 目标 id（detail 模式返回）
-	ContentHash string    `json:"content_hash,omitempty"` // 内容 SHA-256（hashed 模式返回）
+	TS           time.Time `json:"ts"`
+	Tool         string    `json:"tool"`
+	ClientID     string    `json:"client_id"`
+	Scopes       []string  `json:"scopes"`
+	ArgsDigest   string    `json:"args_digest"`
+	ResultStatus string    `json:"result_status"`
+	DurationMS   int       `json:"duration_ms"`
+	Error        string    `json:"error,omitempty"`
+	TargetPath   string    `json:"target_path,omitempty"`
+	Commit       string    `json:"commit,omitempty"`
+	BaseCommit   string    `json:"base_commit,omitempty"`
 }
 
-// Store 持有一条审计文件路径 + 内存缓存。
+type Filter struct {
+	Limit        int
+	Since        time.Time
+	Tool         string
+	ClientID     string
+	ResultStatus string
+}
+
 type Store struct {
-	mu      sync.Mutex
-	path    string
-	entries []Entry
-	max     int
+	mu            sync.Mutex
+	db            *sql.DB
+	path          string
+	retentionDays int
+	defaultLimit  int
 }
 
-// New 打开（或创建）审计文件并载入最近条目。
-func New(path string, max int) *Store {
-	if max <= 0 {
-		max = 2000
+func Open(dbPath string, retentionDays, recentLimit int) (*Store, error) {
+	if retentionDays <= 0 {
+		retentionDays = 90
 	}
-	s := &Store{path: path, max: max}
-	s.load()
-	return s
-}
-
-// Append 记录一条审计，追加写盘。
-func (s *Store) Append(op, scope, clientID, targetID, rawContent string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	e := Entry{
-		Time:     time.Now(),
-		Op:       op,
-		Scope:    scope,
-		ClientID: clientID,
-		TargetID: targetID,
+	if recentLimit <= 0 {
+		recentLimit = 100
 	}
-	if rawContent != "" {
-		e.ContentHash = hash(rawContent)
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		return nil, err
 	}
-
-	s.entries = append(s.entries, e)
-	if len(s.entries) > s.max {
-		s.entries = s.entries[len(s.entries)-s.max:]
-	}
-
-	if s.path == "" {
-		return
-	}
-	os.MkdirAll(filepath.Dir(s.path), 0755)
-	f, err := os.OpenFile(s.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
-		return
+		return nil, err
 	}
-	defer f.Close()
-	_ = json.NewEncoder(f).Encode(e)
+	if _, err := db.Exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;`); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if _, err := db.Exec(schemaSQL); err != nil {
+		db.Close()
+		return nil, err
+	}
+	s := &Store{db: db, path: dbPath, retentionDays: retentionDays, defaultLimit: recentLimit}
+	s.cleanup()
+	return s, nil
 }
 
-// List 返回最近 limit 条，按时间倒序。
-// mode=detail 返回 TargetID；mode=hashed 返回 ContentHash；其余等价 detail。
-func (s *Store) List(mode string, limit int) []Entry {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if limit <= 0 {
-		limit = 20
+func (s *Store) Close() error {
+	if s.db == nil {
+		return nil
 	}
-	out := make([]Entry, 0, len(s.entries))
-	for _, e := range s.entries {
-		if mode == "hashed" {
-			e.TargetID = ""
-		} else {
-			e.ContentHash = ""
-		}
-		out = append(out, e)
-	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Time.After(out[j].Time) })
-	if len(out) > limit {
-		out = out[:limit]
-	}
-	return out
+	return s.db.Close()
 }
 
-func (s *Store) load() {
-	if s.path == "" {
-		return
-	}
-	b, err := os.ReadFile(s.path)
-	if err != nil {
-		return
-	}
-	// JSONL：逐行解析，只保留最近 max 条。
-	lines := splitLines(string(b))
-	for _, l := range lines {
-		var e Entry
-		if json.Unmarshal([]byte(l), &e) != nil {
-			continue
-		}
-		s.entries = append(s.entries, e)
-	}
-	if len(s.entries) > s.max {
-		s.entries = s.entries[len(s.entries)-s.max:]
-	}
-}
+const schemaSQL = `
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL,
+  tool TEXT NOT NULL,
+  client_id TEXT NOT NULL DEFAULT '',
+  scopes TEXT NOT NULL DEFAULT '[]',
+  args_digest TEXT NOT NULL DEFAULT '',
+  result_status TEXT NOT NULL,
+  duration_ms INTEGER NOT NULL DEFAULT 0,
+  error TEXT,
+  target_path TEXT,
+  "commit" TEXT,
+  base_commit TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts);
+`
 
-func hash(s string) string {
-	sum := sha256.Sum256([]byte(s))
+func Digest(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])
 }
 
-func splitLines(s string) []string {
-	var out []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			if l := s[start:i]; len(l) > 0 {
-				out = append(out, l)
-			}
-			start = i + 1
-		}
+func (s *Store) Append(e Entry) {
+	if e.TS.IsZero() {
+		e.TS = time.Now()
 	}
-	if l := s[start:]; len(l) > 0 {
-		out = append(out, l)
+	if e.Scopes == nil {
+		e.Scopes = []string{}
+	}
+	scopes, _ := json.Marshal(e.Scopes)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, _ = s.db.Exec(
+		`INSERT INTO audit_log(ts,tool,client_id,scopes,args_digest,result_status,duration_ms,error,target_path,"commit",base_commit)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		formatTS(e.TS),
+		e.Tool,
+		e.ClientID,
+		string(scopes),
+		e.ArgsDigest,
+		e.ResultStatus,
+		e.DurationMS,
+		nullIfEmpty(e.Error),
+		nullIfEmpty(e.TargetPath),
+		nullIfEmpty(e.Commit),
+		nullIfEmpty(e.BaseCommit),
+	)
+	s.cleanupLocked()
+}
+
+func (s *Store) List(f Filter) []Entry {
+	limit := f.Limit
+	if limit <= 0 {
+		limit = s.defaultLimit
+	}
+	args := []any{}
+	var where []string
+	if !f.Since.IsZero() {
+		where = append(where, "ts >= ?")
+		args = append(args, formatTS(f.Since))
+	}
+	if f.Tool != "" {
+		where = append(where, "tool = ?")
+		args = append(args, f.Tool)
+	}
+	if f.ClientID != "" {
+		where = append(where, "client_id = ?")
+		args = append(args, f.ClientID)
+	}
+	if f.ResultStatus != "" && f.ResultStatus != "all" {
+		where = append(where, "result_status = ?")
+		args = append(args, f.ResultStatus)
+	}
+	q := `SELECT ts, tool, client_id, scopes, args_digest, result_status, duration_ms, error, target_path, "commit", base_commit FROM audit_log`
+	if len(where) > 0 {
+		q += " WHERE " + strings.Join(where, " AND ")
+	}
+	q += " ORDER BY ts DESC LIMIT ?"
+	args = append(args, limit)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := make([]Entry, 0)
+	for rows.Next() {
+		var ts, tool, clientID, scopes, digest, status string
+		var duration int
+		var errMsg, target, commit, base sql.NullString
+		if err := rows.Scan(&ts, &tool, &clientID, &scopes, &digest, &status, &duration, &errMsg, &target, &commit, &base); err != nil {
+			continue
+		}
+		e := Entry{
+			Tool:         tool,
+			ClientID:     clientID,
+			ArgsDigest:   digest,
+			ResultStatus: status,
+			DurationMS:   duration,
+			Error:        errMsg.String,
+			TargetPath:   target.String,
+			Commit:       commit.String,
+			BaseCommit:   base.String,
+		}
+		if t, err := time.Parse(tsLayout, ts); err == nil {
+			e.TS = t
+		} else if t, err := time.Parse(time.RFC3339Nano, ts); err == nil {
+			e.TS = t
+		} else if t, err := time.Parse(time.RFC3339, ts); err == nil {
+			e.TS = t
+		}
+		_ = json.Unmarshal([]byte(scopes), &e.Scopes)
+		if e.Scopes == nil {
+			e.Scopes = []string{}
+		}
+		out = append(out, e)
 	}
 	return out
+}
+
+func (s *Store) cleanup() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanupLocked()
+}
+
+func (s *Store) cleanupLocked() {
+	cutoff := formatTS(time.Now().Add(-time.Duration(s.retentionDays) * 24 * time.Hour))
+	_, _ = s.db.Exec(`DELETE FROM audit_log WHERE ts < ?`, cutoff)
+}
+
+// tsLayout 固定 9 位小数，避免 RFC3339Nano 丢掉尾零后字符串排序乱掉。
+const tsLayout = "2006-01-02T15:04:05.000000000Z"
+
+func formatTS(t time.Time) string {
+	return t.UTC().Format(tsLayout)
+}
+
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
