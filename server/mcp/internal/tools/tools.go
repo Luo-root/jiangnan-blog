@@ -21,7 +21,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/audit"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/auth"
+	"github.com/Luo-root/jiangnan-blog/mcp/internal/config"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/inbox"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/index"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/proposal"
@@ -34,23 +34,21 @@ import (
 // --------------------------------------------------------------------------
 
 const (
-	ScopeManifest      = "read:manifest"
 	ScopeReadContext   = "read:context"
 	ScopeReadKnowledge = "read:knowledge"
 	ScopeReadProject   = "read:project"
 	ScopeReadRegistry  = "read:registry"
-	ScopeReadProposal  = "read:proposal"
 	ScopeWriteProposal = "write:proposal"
 	ScopeReadInbox     = "read:inbox"
 	ScopeWriteInbox    = "write:inbox"
 	ScopeAudit         = "ops:audit"
 )
 
-// RequiredScope 返回工具名对应的 scope，无限制时返回空串。
+// RequiredScope 返回工具名对应的 scope。空串 = 任意有效 token。
 func RequiredScope(toolName string) string { return toolScopes[toolName] }
 
 var toolScopes = map[string]string{
-	"workbase.manifest": ScopeManifest,
+	"workbase.identity": "",
 	"context.startup":   ScopeReadContext,
 	"context.get":       ScopeReadContext,
 	"knowledge.search":  ScopeReadKnowledge,
@@ -62,8 +60,8 @@ var toolScopes = map[string]string{
 	"mcp.list":          ScopeReadRegistry,
 	"mcp.get":           ScopeReadRegistry,
 	"proposal.create":   ScopeWriteProposal,
-	"proposal.list":     ScopeReadProposal,
-	"proposal.get":      ScopeReadProposal,
+	"proposal.list":     ScopeWriteProposal,
+	"proposal.get":      ScopeWriteProposal,
 	"inbox.append":      ScopeWriteInbox,
 	"inbox.update":      ScopeWriteInbox,
 	"inbox.list":        ScopeReadInbox,
@@ -71,27 +69,56 @@ var toolScopes = map[string]string{
 	"audit.list_recent": ScopeAudit,
 }
 
+func ToolNames() []string {
+	keys := make([]string, 0, len(toolScopes))
+	for k := range toolScopes {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func AllowedTools(scopes []string) []string {
+	have := map[string]struct{}{}
+	for _, s := range scopes {
+		have[s] = struct{}{}
+	}
+	var out []string
+	for _, name := range ToolNames() {
+		need := toolScopes[name]
+		if need == "" {
+			out = append(out, name)
+			continue
+		}
+		if _, ok := have[need]; ok {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 // --------------------------------------------------------------------------
 // Deps 聚合 Registry 所需外部依赖。
 // --------------------------------------------------------------------------
 
 type Deps struct {
-	Idx       *index.Store
-	Inbox     *inbox.Store
-	Proposal  *proposal.Store
-	Audit     *audit.Store
-	MCPAuth   *auth.Auth
-	VaultRoot string // 读取文件内容用
-	GitDir    string // git 仓库路径（base_commit 用）
+	Idx          *index.Store
+	Inbox        *inbox.Store
+	Proposal     *proposal.Store
+	Audit        *audit.Store
+	Cfg          *config.Config
+	VaultRoot    string
+	WorkbaseRoot string
+	GitDir       string
 }
 
 // Register 将所有工具注册到 mcp-go server。
 func Register(srv *server.MCPServer, d Deps) {
 	r := &depsHolder{d}
 
-	srv.AddTool(mcp.NewTool("workbase.manifest",
-		mcp.WithDescription("返回 Workbase 自描述：名称、版本、能力与可见性策略。"),
-	), r.handleManifest)
+	srv.AddTool(mcp.NewTool("workbase.identity",
+		mcp.WithDescription("返回 Workbase 自描述 + 当前 token 元数据。描述性字段从 vault 即时读。"),
+	), r.handleIdentity)
 
 	srv.AddTool(mcp.NewTool("context.startup",
 		mcp.WithDescription("派生启动上下文：从 startup context packs 生成 Agent 快速入门摘要。"),
@@ -227,6 +254,8 @@ func checkSensitive(texts ...string) error {
 type SensitiveError struct{ Patterns []string }
 
 func (e *SensitiveError) Error() string {
+	// 旧实现：命中当错误拒绝。契约已改成只 warning、不拒绝。
+	// 重构前不要把这行当规格。见 SCHEMA.md §21。
 	return "prohibited: 内容命中了敏感模式，请手动脱敏后重提：" + strings.Join(e.Patterns, "、")
 }
 
@@ -438,36 +467,6 @@ func baseCommit(gitDir string) string {
 // --------------------------------------------------------------------------
 // 工具处理器
 // --------------------------------------------------------------------------
-
-func (r *depsHolder) handleManifest(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	result := map[string]any{
-		"id":          "jiangnan-workbase",
-		"name":        "遇见江楠 · Agent Workbase",
-		"version":     "0.1.0",
-		"description": "Blog as Agent Workbase",
-		"capabilities": map[string]bool{
-			"context": true, "knowledge": true, "project": true,
-			"skill_registry": true, "mcp_registry": true,
-			"proposal": true, "inbox": true,
-			"direct_write": false, "vector_search": false,
-		},
-		"visibility_policy": map[string]string{
-			"public":  "可公开展示与索引",
-			"private": "授权 Agent 可读",
-			"secret":  "默认不暴露给远程 MCP",
-			"draft":   "草稿，按策略读取",
-		},
-		"tools": func() []string {
-			keys := make([]string, 0, len(toolScopes))
-			for k := range toolScopes {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			return keys
-		}(),
-	}
-	return jsonResult(result), nil
-}
 
 func (r *depsHolder) handleContextStartup(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	packs := concatStartupPacks(r.d.Idx.ContextPacks())

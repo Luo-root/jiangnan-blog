@@ -2,3 +2,6 @@
 config.yaml
 *.exe
 .workbase/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

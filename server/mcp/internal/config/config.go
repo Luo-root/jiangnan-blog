@@ -1,22 +1,45 @@
-// Package config 读取 server/mcp 的 config.yaml。
 package config
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
 
+// Config 是一份 config.yaml。启动必填只有 schema.visibility_policy 与 admin_auth。
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Vault    VaultConfig    `yaml:"vault"`
-	Workbase WorkbaseConfig `yaml:"workbase"`
-	Admin    AdminConfig    `yaml:"admin"`
-	Auth     AuthConfig     `yaml:"auth"`
+	Server    ServerConfig    `yaml:"server"`
+	Admin     AdminConfig     `yaml:"admin"`
+	AdminAuth AdminAuthConfig `yaml:"admin_auth"`
+	Auth      AuthConfig      `yaml:"auth"`
+	Vault     VaultConfig     `yaml:"vault"`
+	Workbase  WorkbaseConfig  `yaml:"workbase"`
+	Inbox     InboxConfig     `yaml:"inbox"`
+	Index     IndexConfig     `yaml:"index"`
+	Knowledge KnowledgeConfig `yaml:"knowledge"`
+	Audit     AuditConfig     `yaml:"audit"`
+	Schema    Schema          `yaml:"schema"`
 }
 
 type ServerConfig struct {
 	Listen string `yaml:"listen"`
+}
+
+type AdminConfig struct {
+	Listen         string `yaml:"listen"`
+	SessionTTL     int    `yaml:"session_ttl"`
+	LoginRateLimit int    `yaml:"login_rate_limit"`
+}
+
+type AdminAuthConfig struct {
+	User     string `yaml:"user"`
+	PassHash string `yaml:"pass_hash"`
+}
+
+type AuthConfig struct {
+	GracePeriodHours int `yaml:"grace_period_hours"`
 }
 
 type VaultConfig struct {
@@ -26,61 +49,162 @@ type VaultConfig struct {
 
 type WorkbaseConfig struct {
 	Root       string `yaml:"root"`
-	Index      string `yaml:"index"`
-	Proposals  string `yaml:"proposals"`
-	Inbox      string `yaml:"inbox"`
-	Audit      string `yaml:"audit"`
-	RebuildCmd string `yaml:"rebuild_cmd"` // apply 后可选：博客 rebuild 命令（空则跳过）
+	Runtime    string `yaml:"runtime"`
+	RebuildCmd string `yaml:"rebuild_cmd"`
 }
 
-type AdminConfig struct {
-	Listen string    `yaml:"listen"`
-	Auth   AdminAuth `yaml:"auth"`
+type InboxConfig struct {
+	RetentionDays int `yaml:"retention_days"`
 }
 
-type AdminAuth struct {
-	User     string `yaml:"user"`
-	PassHash string `yaml:"pass_hash"`
+type IndexConfig struct {
+	Access AccessConfig `yaml:"access"`
 }
 
-type AuthConfig struct {
-	Clients []Client `yaml:"clients"`
+type AccessConfig struct {
+	HalfLifeDays float64 `yaml:"half_life_days"`
+	MinScore     float64 `yaml:"min_score"`
 }
 
-type Client struct {
-	ID        string   `yaml:"id"`
-	TokenHash string   `yaml:"token_hash"`
-	Scopes    []string `yaml:"scopes"`
+type KnowledgeConfig struct {
+	Search SearchConfig `yaml:"search"`
 }
 
-// Default 返回一套开发期默认值，避免 config.yaml 缺失时直接 panic。
-func Default() *Config {
-	return &Config{
-		Server: ServerConfig{Listen: "127.0.0.1:8787"},
-		Vault:  VaultConfig{Root: "D:/Data/工作台", GitDir: ""},
-		Workbase: WorkbaseConfig{
-			Root:      "D:/Data/工作台/Workbase",
-			Index:     "./.workbase/index",
-			Proposals: "./.workbase/proposals",
-			Inbox:     "./.workbase/inbox",
-			Audit:     "./.workbase/audit.jsonl",
-		},
-		Admin: AdminConfig{Listen: "127.0.0.1:8788"},
+type SearchConfig struct {
+	Weights    map[string]float64            `yaml:"weights"`
+	IntentBias map[string]map[string]float64 `yaml:"intent_bias"`
+}
+
+type AuditConfig struct {
+	RetentionDays int `yaml:"retention_days"`
+	RecentLimit   int `yaml:"recent_limit"`
+}
+
+type Schema struct {
+	VisibilityPolicy         map[string]string   `yaml:"visibility_policy"`
+	VisibilityDefault        map[string]string   `yaml:"visibility_default"`
+	SensitivePatterns        []string            `yaml:"sensitive_patterns"`
+	AuditMinFields           []string            `yaml:"audit_min_fields"`
+	AuditResultStatus        []string            `yaml:"audit_result_status"`
+	ProposalStates           []string            `yaml:"proposal_states"`
+	ProposalStateTransitions map[string][]string `yaml:"proposal_state_transitions"`
+	ProposalTargetTypes      []string            `yaml:"proposal_target_types"`
+	ProposalOperationTypes   []string            `yaml:"proposal_operation_types"`
+	InboxStates              []string            `yaml:"inbox_states"`
+	InboxStateTransitions    map[string][]string `yaml:"inbox_state_transitions"`
+	IDPrefixes               map[string]string   `yaml:"id_prefixes"`
+}
+
+func (c *Config) InboxDir() string     { return filepath.Join(c.Workbase.Runtime, "inbox") }
+func (c *Config) ProposalsDir() string { return filepath.Join(c.Workbase.Runtime, "proposals") }
+func (c *Config) IndexFile() string {
+	return filepath.Join(c.Workbase.Runtime, "index", "notes.json")
+}
+func (c *Config) AuditFile() string {
+	return filepath.Join(c.Workbase.Runtime, "audit", "audit.jsonl")
+}
+func (c *Config) AuthDB() string { return filepath.Join(c.Workbase.Runtime, "auth.sqlite") }
+
+func (c *Config) RuntimeDirs() []string {
+	return []string{
+		c.Workbase.Runtime,
+		filepath.Dir(c.IndexFile()),
+		c.ProposalsDir(),
+		c.InboxDir(),
+		filepath.Dir(c.AuditFile()),
 	}
 }
 
-// Load 读取指定路径的 YAML 配置；文件不存在时返回 Default()。
+// Load 读 yaml。path 空则用 ./config.yaml。文件不存在或必填缺失都返回 error，不静默 Default。
 func Load(path string) (*Config, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return Default(), nil
-		}
-		return nil, err
+	if path == "" {
+		path = "config.yaml"
 	}
-	c := Default()
-	if err := yaml.Unmarshal(b, c); err != nil {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read config.yaml: %w", err)
+	}
+	c := &Config{}
+	if err := yaml.Unmarshal(raw, c); err != nil {
+		return nil, fmt.Errorf("parse config.yaml: %w", err)
+	}
+	applyDefaults(c)
+	resolvePaths(c, path)
+	if err := validate(c); err != nil {
 		return nil, err
 	}
 	return c, nil
+}
+
+func applyDefaults(c *Config) {
+	if c.Server.Listen == "" {
+		c.Server.Listen = DefaultServerListen
+	}
+	if c.Admin.Listen == "" {
+		c.Admin.Listen = DefaultAdminListen
+	}
+	if c.Admin.SessionTTL == 0 {
+		c.Admin.SessionTTL = DefaultSessionTTL
+	}
+	if c.Admin.LoginRateLimit == 0 {
+		c.Admin.LoginRateLimit = DefaultLoginRateLimit
+	}
+	if c.Workbase.Runtime == "" {
+		c.Workbase.Runtime = DefaultRuntime
+	}
+	if c.Inbox.RetentionDays == 0 {
+		c.Inbox.RetentionDays = DefaultInboxRetentionDays
+	}
+	if c.Index.Access.HalfLifeDays == 0 {
+		c.Index.Access.HalfLifeDays = DefaultAccessHalfLifeDays
+	}
+	if c.Index.Access.MinScore == 0 {
+		c.Index.Access.MinScore = DefaultAccessMinScore
+	}
+	if c.Audit.RetentionDays == 0 {
+		c.Audit.RetentionDays = DefaultAuditRetentionDays
+	}
+	if c.Audit.RecentLimit == 0 {
+		c.Audit.RecentLimit = DefaultAuditRecentLimit
+	}
+	if c.Schema.SensitivePatterns == nil {
+		c.Schema.SensitivePatterns = []string{}
+	}
+	if len(c.Schema.VisibilityDefault) == 0 {
+		c.Schema.VisibilityDefault = DefaultVisibilityDefault()
+	}
+	if len(c.Knowledge.Search.Weights) == 0 {
+		c.Knowledge.Search.Weights = DefaultSearchWeights()
+	}
+}
+
+func resolvePaths(c *Config, configPath string) {
+	base := filepath.Dir(configPath)
+	c.Vault.Root = absFrom(base, c.Vault.Root)
+	c.Vault.GitDir = absFrom(base, c.Vault.GitDir)
+	c.Workbase.Root = absFrom(base, c.Workbase.Root)
+	c.Workbase.Runtime = absFrom(base, c.Workbase.Runtime)
+	c.Workbase.RebuildCmd = absFrom(base, c.Workbase.RebuildCmd)
+}
+
+func absFrom(base, p string) string {
+	if p == "" {
+		return ""
+	}
+	if filepath.IsAbs(p) {
+		return filepath.Clean(p)
+	}
+	return filepath.Clean(filepath.Join(base, p))
+}
+
+func validate(c *Config) error {
+	for _, k := range []string{"public", "private", "secret", "draft"} {
+		if c.Schema.VisibilityPolicy == nil || c.Schema.VisibilityPolicy[k] == "" {
+			return fmt.Errorf("config.yaml: schema.visibility_policy.%s 不能为空", k)
+		}
+	}
+	if c.AdminAuth.User == "" || c.AdminAuth.PassHash == "" {
+		return fmt.Errorf("config.yaml: admin_auth.user / pass_hash 必填")
+	}
+	return nil
 }

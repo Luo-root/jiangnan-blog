@@ -1,4 +1,6 @@
-// Package sanitize 做敏感信息检测与脱敏。
+// Package sanitize 做敏感模式检测。命中只 warning，不拒绝、读出不打码。
+// 默认 patterns 空列表 = 关闭。本文件硬编码 regex 是旧实现，不要当规格；
+// 运行时权威 = config.yaml schema.sensitive_patterns。
 package sanitize
 
 import "regexp"

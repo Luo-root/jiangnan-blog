@@ -1,41 +1,86 @@
-# VPS production config EXAMPLE for Agent Workbase MCP v0.1
-# Copy to config.vps.yaml locally, fill hashes, then run deploy-vps.ps1.
-# Real config.vps.yaml is gitignored — do not commit live hashes if avoidable.
+# VPS production config EXAMPLE for Agent Workbase MCP
+# Copy to config.vps.yaml locally, fill admin_auth, then run deploy-vps.ps1.
+# Real config.vps.yaml is gitignored — do not commit live hashes.
+#
+# Token 不在 yaml。登录 webUI /settings/token 自助签发。
+# 字段权威：../../SCHEMA.md §1 与 ../../server/mcp/config.example.yaml
+
 server:
   listen: 127.0.0.1:8787
+
+admin:
+  listen: 127.0.0.1:8788
+  session_ttl: 3600
+  login_rate_limit: 5
 
 vault:
   root: /home/studio/workbench
   git_dir: /home/studio/vault.git
 
+# root    = Vault 内 Registry 源（context/skills/mcps）
+# runtime = 进程运行时私有区（index / proposals / inbox / audit / auth.sqlite）
 workbase:
-  root: /home/studio/workbase
-  index: /home/studio/workbase/index
-  proposals: /home/studio/workbase/proposals
-  inbox: /home/studio/workbase/inbox
-  audit: /home/studio/workbase/audit.jsonl
+  root: /home/studio/workbench/Workbase
+  runtime: /home/studio/workbase
   rebuild_cmd: /home/studio/workbase/bin/rebuild-blog.sh
 
-admin:
-  listen: 127.0.0.1:8788
-  auth:
-    user: admin
-    # sha256 hex of admin password
-    pass_hash: REPLACE_WITH_SHA256_HEX_OF_ADMIN_PASSWORD
+admin_auth:
+  user: admin
+  pass_hash: REPLACE_WITH_SHA256_HEX_OF_ADMIN_PASSWORD
 
 auth:
-  clients:
-    - id: vps-client
-      # sha256 hex of bearer token
-      token_hash: REPLACE_WITH_SHA256_HEX_OF_BEARER_TOKEN
-      scopes:
-        - read:manifest
-        - read:context
-        - read:knowledge
-        - read:project
-        - read:registry
-        - read:proposal
-        - write:proposal
-        - read:inbox
-        - write:inbox
-        - ops:audit
+  grace_period_hours: 0
+
+inbox:
+  retention_days: 7
+
+index:
+  access:
+    half_life_days: 7
+    min_score: 0.001
+
+knowledge:
+  search:
+    weights: {}
+
+audit:
+  retention_days: 90
+  recent_limit: 100
+
+schema:
+  visibility_policy:
+    public:  "可公开展示与索引"
+    private: "授权 Agent 可读"
+    secret:  "默认不暴露给远程 MCP"
+    draft:   "草稿。授权 MCP 可读；search scope=all / 各 list / context.startup 收录；公开博客不发布"
+  visibility_default:
+    文章:               public
+    项目:               public
+    友链:               public
+    部署溯源:           private
+    Workbase/context:   private
+    Workbase/skills:    private
+    Workbase/mcps:      private
+    default:            private
+  sensitive_patterns: []
+  audit_min_fields: [ts, tool, client_id, scopes, args_digest, result_status, duration_ms]
+  audit_result_status: [success, error, unauthorized, forbidden]
+  proposal_states: [pending, approved, applied, rejected, conflict]
+  proposal_state_transitions:
+    pending:  [approved, rejected]
+    approved: [applied, conflict]
+    applied:  []
+    rejected: []
+    conflict: [approved]
+  proposal_target_types:    [note, context_pack, project, article, skill, mcp_server]
+  proposal_operation_types: [create_file, append, append_section, patch_section, register_item]
+  inbox_states: [pending, reviewing, done, abandoned]
+  inbox_state_transitions:
+    pending:   [reviewing, done, abandoned]
+    reviewing: [done, abandoned]
+    done:      []
+    abandoned: []
+  # 自动生成 ID 前缀。只给 proposal / inbox。notes.id = vault 相对路径（正斜杠，含 .md）。入库 / 查询一律 ToSlash。
+  id_prefixes:
+    proposal:     "prop"
+    inbox:        "inbox"

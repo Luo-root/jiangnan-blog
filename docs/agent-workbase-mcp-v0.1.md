@@ -1,36 +1,81 @@
-# 遇见江楠 · Agent Workbase MCP v0.1 设计文档
+# 遇见江楠 · Agent Workbase MCP 设计文档
 
-> 状态：Draft v0.1  
-> 日期：2026-08-17  
-> 项目定位：Blog as Agent Workbase / 博客即 Agent 工作基座  
-> 当前仓库：`jiangnan-blog`（后续建议演进为 `jiangnan-workbase`）
+> 状态：v0.1 完整版（不分 v0.1/v0.2 阶段，v0.1 即完整 v1.0 设计的第一版实施）
+> 日期：2026-08-19
+> 项目定位：Blog as Agent Workbase / 博客即 Agent 工作基座
+> 仓库：`Luo-root/jiangnan-blog`（暂不 rename）
+> 文档分层：设计文档（why / what / 验收）/ `SCHEMA.md`（API + 字段 + 状态机 + 算法）/ `D:/Data/工作台/Workbase/`（运行时自描述数据）
 
 ---
 
-## 0. 一句话结论
+## 0. 顶层原则
 
-「遇见江楠」不再只是一个 Obsidian 驱动的静态博客，而是一套以 Obsidian Vault 为事实源、以公开博客为展示层、以公网私密 MCP Server 为 Agent 接入层的个人 Agent 工作基座。
+### 0.1 单一事实源原则
 
-核心目标：
+MCP 任何对外可见的描述性字段**必须**从 `D:/Data/工作台/Workbase/` 即时读取。Workbase 自身是 vault 长期记忆的一部分，修改走 Obsidian 编辑 + `sync.ps1` 推送；**不允许** Go 代码持有描述性字符串字面量。
+
+适用范围：
+
+- `workbase.identity` 的 `workbase.name` / `workbase.description` / `workbase.getting_started` / `workbase.critical_rules` / `workbase.see_also`
+- `context.startup` 合成来源
+- `skill.list` / `mcp.list` / `project.list` 的条目数据（与 workbase.identity.workbase.tools 是同一来源）
+- 任何 Agent 可读的"是什么 / 能做什么 / 边界在哪"类信息
+
+不属于本原则的范围（属于协议层标识符或实现细节）：
+
+- MCP 协议层 `id` / `version`（manifest 自身的协议标识符，不是 Workbase 的描述）
+- HTTP 路由、方法名
+- 错误码、状态机名
+- 信号权重的默认值（实现常量，可被 config 覆盖）
+
+**违反本原则 = 后续修改必须改 Go 重编译 = 违反"长期记忆可独立维护"**。验收时核对：修改 `Workbase/mcps/jiangnan-workbase.md` 后立即反映到 `workbase.identity`，不重启进程。
+
+### 0.2 内容统一分发原则
+
+公开博客和后台管理读**同一份 vault**，扫描各做各的（不是共享同一份 index 文件）：
 
 ```text
-跨设备、跨 Agent、跨工具，仍能获得一致的个人上下文、项目状态、知识索引、Skill/MCP 能力目录和可控写入体验。
+D:/Data/工作台/  ←  Obsidian Vault（事实源）
+        ↓                              ↓
+  Vite `virtual:vault-tree`      MCP indexer
+  （构建时扫盘）                  （写 SQLite notes）
+        ↓                              ↓
+  公开博客 dist/                 后台 / MCP HTTP API
 ```
 
-v0.1 不追求复杂 RAG、不引入向量数据库、不做网页聊天框、不做 Agent 保姆式安装器，而是先把以下能力打稳：
+- 公开博客 = Vite 构建时扫 vault，只收 `visibility=public` 且非草稿
+- 后台 / MCP = indexer 扫同一份 vault 写 SQLite，private / secret 按 scope 可读
+- **不**让博客读 `workbase/index`，也**不**让后台另开一套 vault 路径
 
-```text
-1. Workbase 自描述
-2. Startup Context
-3. 知识检索与读取
-4. 项目上下文
-5. Skill Registry
-6. MCP Registry
-7. 通用 Proposal 写入协议
-8. Inbox 独立待办区
-9. Git-backed 写入演进路线
-10. 公网私密访问与安全边界
-```
+### 0.3 文档分层
+
+| 层级 | 路径 | 职责 | 修改频率 |
+|---|---|---|---|
+| 设计文档 | `docs/agent-workbase-mcp-v0.1.md` | why / what / 验收口径 | 重大设计变更 |
+| API/数据契约 | `SCHEMA.md` | 字段映射、状态机、表结构、算法公式、frontmatter schema | 字段/状态变更 |
+| 自描述数据 | `D:/Data/工作台/Workbase/` | 运行时数据（manifest 文案、context pack、registry） | 日常编辑 |
+
+**同一信息只在一处定义**。例如 `visibility` 字段的取值表（`public` / `private` / `secret` / `draft`）的事实源 = `config.yaml` 的 `schema.visibility_policy` / `schema.visibility_default`（Go 启动加载到 `cfg.Schema.*`，运行时**不**再读盘）。`SCHEMA.md §3` 是**给人看的说明**，不重复数据——改本表后**必须**同步改 `config.yaml`。
+
+字段映射的修改流程：
+
+1. 改 `SCHEMA.md` 对应小节
+2. 同步改 `server/mcp/internal/...` 中对应代码
+3. 部署
+4. **两步缺一不可**（设计文档 + 验收 §23.1.35 强制）
+
+### 0.4 不分版本原则
+
+v0.1 = 完整版。**不预留 v0.2 演进项**。任何确定要做的事都直接做：
+
+- 3-way merge（无冲突自动 apply）
+- 艾宾浩斯遗忘曲线热度
+- 字段映射在 SCHEMA.md 细粒度
+- 管理后台 TS 工程化
+- 视觉规范统一
+- 配置文件可配项（权重、retention_days、half_life_days）
+
+理由：分版本 = 给自己留借口不做 = 验收时缩水。不接受的对写成「不做」；接受的对写成当前行为。不要标「下一版候选」。
 
 ---
 
@@ -38,14 +83,12 @@ v0.1 不追求复杂 RAG、不引入向量数据库、不做网页聊天框、�
 
 ### 1.1 当前博客已有基础
 
-当前系统已经具备：
-
 ```text
-D:\Data\工作台\                       # Obsidian Vault，内容事实源
-D:\Code\Front-end\博客\              # React/Vite 静态博客代码
-/home/studio/workbench                 # VPS 上的 Vault 镜像
-/home/studio/app/repo                  # VPS 上的博客代码
-/home/studio/app/public                # Caddy 静态服务目录
+D:/Data/工作台/                     # Obsidian Vault，内容事实源
+D:/Code/Front-end/博客/            # React/Vite 静态博客代码
+/home/studio/workbench               # VPS 上的 Vault 镜像
+/home/studio/app/repo                # VPS 上的博客代码
+/home/studio/app/public              # Caddy 静态服务目录
 ```
 
 内容链路：
@@ -72,23 +115,11 @@ scp repo.tar.gz
 /home/studio/app/public
 ```
 
-当前博客已支持：
-
-- Obsidian Vault 构建时注入。
-- 文章 / 项目 / 友链 / 归档多栏目。
-- WikiLink 与普通 Markdown 相对链接处理。
-- 反链与图谱。
-- 公开部署到 VPS + Caddy。
+已支持：Obsidian Vault 构建时注入、文章/项目/友链/归档多栏目、WikiLink 与相对链接、反链与图谱、公开部署到 VPS + Caddy。
 
 ### 1.2 新问题
 
-普通博客解决的是：
-
-```text
-人如何阅读我的知识沉淀？
-```
-
-Agent Workbase 要解决的是：
+普通博客解决的是"人如何阅读我的知识沉淀"。Agent Workbase 要解决的是：
 
 ```text
 Agent 如何稳定、可信、低成本地读取我的长期上下文？
@@ -100,41 +131,24 @@ Agent 如何提出知识库写入，而不污染正式内容？
 
 ### 1.3 设计目标
 
-v0.1 目标：
-
-```text
-任意授权 Agent 连接公网私密 MCP endpoint 后，可以：
-
-1. 读取 Workbase manifest。
-2. 获取 startup context。
-3. 搜索和读取授权范围内的知识库内容。
-4. 获取项目状态、决策、下一步。
-5. 获取 Skill / MCP Registry。
-6. 创建 proposal，或追加 inbox 待办。
-7. 所有访问有权限边界和审计记录。
-8. 不泄露真实 IP、私钥路径、token、secret 内容。
-```
+v0.1 目标：任意授权 Agent 连接公网私密 MCP endpoint 后，可以读取 Workbase 自描述（workbase.identity）、获取 startup context、搜索和读取授权范围内的知识库内容、获取项目状态/决策/下一步、获取 Skill/MCP Registry、创建 proposal 或追加 inbox 待办；所有访问有权限边界和审计记录；不泄露真实 IP/私钥路径/token/secret。
 
 ---
 
 ## 2. 非目标
 
-v0.1 明确不做：
-
 ```text
-1. 不做网页聊天框。
-2. 不引入向量数据库。
-3. 不直接让公网 MCP 修改正式 Vault 正文。
-4. 不实现完整 OAuth 2.1 授权服务器。
-5. 不做多用户系统。
-6. 不做复杂安装器。
-7. 不为每个 Agent 工具单独生成安装教程。
-8. 不将 private / secret 内容发布到公开博客。
-9. 不改变现有 Obsidian 作为内容事实源的原则。
-10. 不大规模重构前端仓库结构。
+1. 不做网页聊天框
+2. 不引入向量数据库
+3. 不让 Agent 绕过 Proposal 直接修改正式 Vault
+4. 不实现完整 OAuth 2.1 授权服务器
+5. 不做多用户系统
+6. 不做复杂安装器
+7. 不为每个 Agent 工具单独生成安装教程
+8. 不将 private / secret 内容发布到公开博客
+9. 不改变 Obsidian 作为内容事实源的原则
+10. 不预留 v0.2（v0.1 即完整版）
 ```
-
-后续可以演进，但 v0.1 不承担这些复杂度。
 
 ---
 
@@ -142,104 +156,74 @@ v0.1 明确不做：
 
 ### 3.1 Obsidian Vault 是事实源
 
-正式知识内容以 Markdown 文件为事实源。
+正式知识内容以 Markdown 文件为事实源：
 
 ```text
-文章 = 文章/*.md
-项目 = 项目/*.md
-Skill Registry = Workbase/skills/*.md
-MCP Registry = Workbase/mcps/*.md
-Context Pack = Workbase/context/*.md
-普通笔记 = Vault 内其它 Markdown
+文章      = 文章/*.md
+项目      = 项目/*.md
+友链      = 友链/*.md
+Skill     = Workbase/skills/*.md
+MCP       = Workbase/mcps/*.md
+Context   = Workbase/context/*.md
+普通笔记  = Vault 内其它 .md（不含 `Workbase/context|skills|mcps/`；Workbase 下误放的其它 md 也按 note）
 ```
 
-MCP Server 不维护另一份长期真相。它只做：
+MCP Server 不维护另一份长期真相，只做读取、索引、暴露、生成 proposal、记录审计。
 
-```text
-读取、索引、暴露、生成 proposal、记录审计。
-```
+### 3.2 公网可访问 ≠ 公开可访问
 
-### 3.2 公网可访问，不等于公开可访问
-
-MCP Server 部署在公网，方便跨设备和跨 Agent 接入。
-
-但访问必须是私密的：
+MCP Server 部署在公网方便跨设备跨 Agent 接入，但访问必须是私密的：
 
 ```text
 HTTPS + Authorization Bearer Token + scope + audit
 ```
 
-### 3.3 Agent 不是傻瓜，不需要保姆式 guide
+### 3.3 Agent 不是傻瓜
 
-Skill/MCP Registry 的职责不是教每个 Agent 工具怎么安装，而是提供：
-
-```text
-能力是什么
-在哪里
-来源是什么
-风险是什么
-授权要求是什么
-是否公开可迁移
-```
-
-Agent 拿到来源、endpoint、transport、auth、scope 后，自行适配自己的运行时。
+Skill/MCP Registry 的职责不是教每个 Agent 工具怎么安装，而是提供：能力是什么、在哪里、来源是什么、风险是什么、授权要求是什么、是否公开可迁移。Agent 拿到来源、endpoint、transport、auth、scope 后自行适配。
 
 ### 3.4 写入统一走 Proposal
 
-不要为每类写入都创建一个工具：
+不创建 `context.update` / `article.create` / `skill.register` / `mcp.register` / `project.patch` 等单点写入工具，统一入口 `proposal.create`，由内部 `target.type + operation.type + payload` 表达不同写入目标。
 
-```text
-context.update
-article.create
-skill.register
-mcp.register
-project.patch
-```
-
-统一入口：
-
-```text
-proposal.create
-```
-
-由 proposal 内部的：
-
-```text
-target.type + operation.type + payload
-```
-
-表达不同写入目标。
-
-inbox 不是「写入」，是独立待办：走 `inbox.append` / `inbox.update`，不经过 Proposal，也没有审批 / apply / commit（见 §16）。
+Inbox 不是写入，是独立待办：走 `inbox.append` / `inbox.update`，不经过 Proposal、不审批、不 apply、不 commit。
 
 ### 3.5 context.startup 是派生结果
 
-`context.startup` 不应该直接手写或直接 patch。
+`context.startup` 不直接手写或 patch，由多个 context pack 按 `priority` 合成。修改 startup 的正确方式是修改背后的 context pack。startup 输出**不缓存**，每次调用即时合成（命中即记录访问热度）。
 
-它应由多个 context pack 合成：
-
-```text
-startup = profile + engineering-style + security-boundaries + active-projects + recent-focus
-```
-
-修改 startup 的正确方式是修改背后的 context pack。
+合成跳过 `visibility=secret`（即使标了 `startup: true`）。draft 照收。`context.get` 对 draft 放行，secret 默认 `secret_blocked`。和 project / skill / mcp 同一套。
 
 ### 3.6 先结构化，再智能化
 
-v0.1 不引入向量库。优先使用：
+v0.1 不引入向量库，优先使用 frontmatter / title / tag / path / heading / WikiLink / backlink / SQLite FTS。个人知识库第一阶段更需要可靠结构，而不是不透明召回。
 
-```text
-frontmatter
-title
-tag
-path
-heading
-WikiLink
-backlink
-SQLite FTS / 简单全文索引
-```
+### 3.7 MCP 描述性字段从 vault 即时读
 
-个人知识库第一阶段更需要可靠结构，而不是不透明召回。
+详见 §0.1。补充：每次调用即时读磁盘，**不缓存**。文件读取失败 → 返回 MCP error，**不**静默 fallback 到硬编码字符串。
+
+### 3.8 base_commit 不匹配时尝试 3-way merge
+
+Agent 写长期记忆不是"我有 token 所以我可以改"，而是"用户审批后才改"。3-way merge 取代简单 abort。`ours` 必须是完整文件，不能是 payload 片段（详见 §17.3）：
+
+- 先在 `base_commit` 的目标文件上施加 operation，得到完整 ours
+- 目标文件在 `base_commit` 之后无任何修改 → 完整 ours 直接落盘
+- 目标文件有修改但无冲突 → 3-way（base=文件@base, other=文件@HEAD, ours=完整文件）后 apply
+- 3-way 产生冲突 → 状态 `conflict`，返回冲突区段
+- frontmatter 内部冲突 → 一律 conflict（结构化字段不自动合并）
+- `create_file` / `register_item`：HEAD 已存在 → conflict；不存在 → 直接落盘，不走 merge
+
+工具实现用 `git merge-file`；frontmatter 冲突的判定 = YAML 解析 + 字段级 diff。
+
+### 3.9 视觉规范统一
+
+公开博客（朝曦/夜隐主题）和后台管理（明亮专业主题）共享**同一套设计 token**：
+
+- 颜色、字体、间距、圆角、阴影、动效
+- 主题切换 = 切换 token，**不**切换组件结构
+- 后台 = 公开博客设计系统的 admin skin
+
+不存在"后台独立设计语言"。视觉规范在 `server/mcp/admin/src/styles/tokens.css`（与博客 `src/styles.css` 同源）。
 
 ---
 
@@ -249,20 +233,21 @@ SQLite FTS / 简单全文索引
 
 ```text
 ┌───────────────────────────────────────────────┐
-│                  Agent Clients                 │
-│ MiniMax Code / Cursor / Claude / ChatGPT / ... │
+│               Agent Clients                    │
+│  MiniMax Code / Cursor / Claude / ChatGPT / ...│
 └───────────────────────┬───────────────────────┘
                         │ HTTPS + Bearer Token
                         ▼
 ┌───────────────────────────────────────────────┐
 │          Jiangnan Workbase MCP Server          │
-│ manifest / context / knowledge / project / ... │
+│  identity / context / knowledge / project /    │
+│  skill / mcp / proposal / inbox / audit        │
 └───────────────────────┬───────────────────────┘
                         │ read index / write proposals
                         ▼
 ┌───────────────────────────────────────────────┐
 │             Workbase Private Store             │
-│ index / proposals / inbox / audit / config     │
+│  index / proposals / inbox / audit / config    │
 └───────────────────────┬───────────────────────┘
                         │ index source
                         ▼
@@ -274,105 +259,53 @@ SQLite FTS / 简单全文索引
                         ▼
 ┌───────────────────────────────────────────────┐
 │              Local Obsidian Vault              │
-│             D:\Data\工作台                    │
+│             D:/Data/工作台/                    │
 └───────────────────────────────────────────────┘
 ```
 
-### 4.2 文件层建议
-
-在本地 Vault 中新增 `Workbase/`（决策已确认：`Workbase/` 放在 `D:\Data\工作台\` 根下）：
+### 4.2 Vault 目录
 
 ```text
-D:\Data\工作台\
-├── Workbase\
-│   ├── context\
-│   │   ├── profile.md
-│   │   ├── engineering-style.md
-│   │   ├── security-boundaries.md
-│   │   ├── active-projects.md
-│   │   └── recent-focus.md
-│   ├── skills\
-│   │   └── *.md
-│   ├── mcps\
-│   │   └── *.md
-│   └── policies\
-│       └── visibility.md
-├── 文章\
-├── 项目\
-├── 友链\
-└── 部署溯源\
+D:/Data/工作台/
+├── Workbase/                # Agent 工作基座私有层（构建排除）
+│   ├── context/             # context pack
+│   ├── skills/              # Skill Registry
+│   └── mcps/                # MCP Registry
+├── 文章/                    # 博客正文
+├── 项目/                    # 项目卡片
+├── 友链/                    # 友链卡片
+└── 部署溯源/                # 部署记录（默认 private）
 ```
 
-注意：`Agent Inbox/` 不放在本地 Vault。proposal 与 inbox 只存 VPS 私有区（决策已确认），且两者完全独立：
-
-- proposal = 正式知识写入请求，经 webUI 审批后 apply 回正式 Vault 文件。
-- inbox = 独立待办（todo），状态机 `pending → reviewing → done | abandoned`，done/abandoned 保留 7 天后自动删除；不转 proposal、不审批、不 apply、不 commit、不与 Obsidian 联动。
-
-`Workbase/` 是私有工作基座目录，不作为公开博客栏目。构建时 `virtual:vault-tree` 应排除 `Workbase/`（与 `.obsidian` / `.trash` 同等处理），否则会被当成一个新栏目暴露到公开站。
-
-在 VPS 私有区新增：
+VPS 私有区：
 
 ```text
 /home/studio/workbase/
-├── config.yaml             # 不进 Git，保存 token hash / scopes / paths
-├── index/
-│   ├── manifest.json
-│   ├── notes.sqlite
-│   ├── graph.json
-│   ├── context/
-│   ├── skills.json
-│   └── mcps.json
-├── proposals/
-│   └── *.md
-├── inbox/
-│   └── *.md
-└── audit/
-    └── audit.sqlite
+├── config.yaml              # 不进 Git：admin pass_hash / paths / grace_period_hours（token 全部在 SQLite）
+├── index/                   # SQLite + JSON
+├── proposals/               # *.md
+├── inbox/                   # *.md
+└── audit/                   # audit.sqlite
+```
+
+### 4.3 内容统一分发
+
+同一份 vault，两套扫描（详见 §0.2）：
+
+```text
+                 D:/Data/工作台/
+                    ↓            ↓
+          Vite 扫盘构建      MCP indexer → SQLite
+          (public 且非草稿)   (public/private/secret by scope)
 ```
 
 ---
 
 ## 5. 命名与仓库演进
 
-当前仓库仍为：
+**不重命名**仓库。`Luo-root/jiangnan-blog` 继续使用。`blog` 不等于"博客文章"——它是"个人对外发布的所有内容"的统称，包括博客、项目展示、友链、归档，以及未来可能的视频栏目。
 
-```text
-Luo-root/jiangnan-blog
-```
-
-但产品定位已经超出 blog。后续建议演进为：
-
-```text
-Luo-root/jiangnan-workbase
-```
-
-中文名：
-
-```text
-遇见江楠 · Agent 工作基座
-```
-
-建议路线：
-
-```text
-阶段 1：不改 repo 名，先补 docs/ 与 server/mcp/。
-阶段 2：MCP v0.1 跑通后，再评估 GitHub rename。
-阶段 3：如需要，再演进 monorepo 结构。
-```
-
-初始目录不建议大迁移：
-
-```text
-D:\Code\Front-end\博客\
-├── src\                  # 现有 web
-├── server\
-│   └── mcp\              # 后续 Go MCP Server
-├── docs\
-│   └── agent-workbase-mcp-v0.1.md
-├── deploy\
-│   └── mcp\              # 后续 MCP 部署脚本
-└── README.md
-```
+中文名："遇见江楠 · Agent 工作基座"。
 
 ---
 
@@ -380,38 +313,9 @@ D:\Code\Front-end\博客\
 
 ### 6.1 Transport
 
-远程 MCP 使用 Streamable HTTP。
+Streamable HTTP（按 MCP 2025-11-25 规范）。Endpoint：`https://mcp.<domain>/mcp`，Caddy HTTPS 反代到 `127.0.0.1:8787`。
 
-建议 endpoint：
-
-```text
-https://mcp.<domain>/mcp
-```
-
-备案 / HTTPS 未完成前，开发验证可以使用：
-
-```text
-localhost
-内网
-临时隧道
-测试域名
-```
-
-但正式目标是：
-
-```text
-Caddy HTTPS
-  ↓
-/mcp
-  ↓
-Go MCP Server
-```
-
-官方 MCP 2026-07-28 规范继续推进 Streamable HTTP，并将旧 HTTP+SSE 视为不建议新实现采用的路径；同时规范引入 stateless core、header-based routing、cacheable list results 等能力。设计时按 Streamable HTTP 对齐。
-
-### 6.2 v0.1 认证
-
-v0.1 使用简单 Bearer Token：
+### 6.2 Bearer Token
 
 ```http
 Authorization: Bearer <WORKBASE_TOKEN>
@@ -419,850 +323,837 @@ Authorization: Bearer <WORKBASE_TOKEN>
 
 要求：
 
-```text
-1. token 不放 URL query。
-2. token 不写入公开仓库。
-3. 服务端只存 token hash。
-4. 每个 Agent 使用独立 token。
-5. token 绑定 scopes。
-6. audit 记录 client，不记录 token。
-```
-
-示例配置：
-
-```yaml
-clients:
-  - id: minimax-code
-    token_hash: sha256:...
-    scopes:
-      - read:context
-      - read:knowledge
-      - read:project
-      - read:registry
-      - write:proposal
-      - write:inbox
-  - id: readonly-agent
-    token_hash: sha256:...
-    scopes:
-      - read:context
-      - read:knowledge
-      - read:project
-```
+1. token 不放 URL query
+2. token 不写入公开仓库
+3. 服务端存 token hash 到 SQLite `auth_tokens` 表（**不**存 config.yaml，也不存明文）
+4. 每个 Agent 使用独立 token
+5. token 绑定 scopes
+6. audit 记录 client，不记录 token
 
 ### 6.3 后续 OAuth
 
-MCP 官方授权规范基于 OAuth 2.x / OAuth 2.1 方向，HTTP-based transport 的受保护资源访问应使用 Bearer access token。后续如需要多设备 consent、动态客户端注册、token 轮换、撤销，可升级到 OAuth/OIDC。
+MCP 官方授权规范基于 OAuth 2.x / 2.1。后续如需多设备 consent、动态客户端注册、token 轮换、撤销，可升级 OAuth/OIDC。v0.1 不实现完整 OAuth Server。
 
-v0.1 不实现完整 OAuth Server，避免认证系统吞掉主体复杂度。
+### 6.4 Token 生命周期
+
+Token 全流程走 **webUI 自助 + SQLite 存储**，**不**走 SSH / `config.yaml` 改文件 / 重启。
+
+#### 6.4.1 存储位置：SQLite `auth_tokens` 表
+
+```sql
+CREATE TABLE auth_tokens (
+  id            INTEGER PRIMARY KEY,
+  name          TEXT    NOT NULL,           -- = client_id。同名可有多行（active + grace），audit 不碎
+  token_hash    TEXT    NOT NULL,           -- SHA-256(明文 token)
+  scopes        TEXT    NOT NULL,           -- JSON array，如 ["read:context","read:knowledge"]
+  status        TEXT    NOT NULL DEFAULT 'active',  -- active | grace | revoked
+  grace_until   TIMESTAMP,                 -- 仅 status=grace 有值：旧 token 灰度截止时间
+  description   TEXT,                      -- 用户填的描述
+  created_at    TIMESTAMP NOT NULL,
+  created_by    TEXT    NOT NULL,          -- admin user id
+  last_used_at  TIMESTAMP,
+  use_count     INTEGER DEFAULT 0
+);
+
+CREATE UNIQUE INDEX idx_auth_tokens_active_name ON auth_tokens(name) WHERE status='active';
+CREATE INDEX idx_auth_tokens_hash ON auth_tokens(token_hash);
+CREATE INDEX idx_auth_tokens_status ON auth_tokens(status);
+```
+
+**`config.yaml` 不再含 `auth.clients[]`**。所有 token / scope 信息都来自 SQLite。
+
+#### 6.4.2 webUI 创建流程
+
+```
+登录 webUI → Settings → Token 管理 → 点"创建 Token"
+  ↓
+表单：
+  名称 (name = client_id)*: [_________________]
+  描述:                     [_________________]
+  权限 (scopes)（来自 SCHEMA.md §2.1，仅 8 个标准 scope）:
+   ☑ read:context       (默认勾选)
+   ☑ read:knowledge     (默认勾选)
+   ☐ read:project
+   ☐ read:registry
+   ☐ read:inbox
+   ☐ write:proposal
+   ☐ write:inbox
+   ☐ ops:audit
+   # 没有 admin:reindex。重建索引不是 Agent scope，Token UI 不展示、不签发。
+  [取消]                          [创建]
+  ↓
+后端：
+  1. 校验：没有 status='active' 的同名行 + scope 合法（必须在 SCHEMA §2.1 表内）
+     # 不是整列 name 唯一。grace / revoked 同名行可以在。
+     # SELECT WHERE name=? 会把轮换后的再签发误拒。
+  2. 生成明文 token = base64(crypto/rand 32 bytes)  (32 字节随机 = 43 字符 base64)
+  3. token_hash = SHA-256(明文)    # 不含 sha256: 前缀
+  4. INSERT INTO auth_tokens (name, token_hash, scopes, created_at, created_by, status='active')
+  5. 同步 upsert 该行进 tokenCache（签发必须立刻能用，不能等 5s reload）
+  6. 返回明文 token **仅一次**（不存明文到任何地方）
+  ↓
+弹窗：
+  ┌─ 你的 Token（只展示一次，请立即复制保存）─────────┐
+  │  Name: minimax-code                              │
+  │  Token: <base64 32 字节，仅展示这一次>            │
+  │  Scopes: read:context, read:knowledge, ...        │
+  │  [复制到剪贴板]  [我已保存]                       │
+  └──────────────────────────────────────────────────┘
+  ↓
+关弹窗 / 刷新页面 → 列表只显示 name + scopes + 创建时间 + last_used_at + use_count
+                    **永远不再展示明文**
+```
+
+**`config.yaml` 不再含 `auth.clients[]`**——所有 Token 都在 SQLite `auth_tokens` 表，零重启生效。唯一保留的 auth 字段是 `auth.grace_period_hours`（轮换 / 撤销灰度时长）。
+
+#### 6.4.3 运行时使用
+
+HTTP middleware 流程：
+
+```go
+// server/mcp/internal/auth/middleware.go
+func Authenticate(req *http.Request) (*AuthContext, error) {
+    token := extractBearer(req)
+    hash := sha256hex(token)
+
+    // 认证只读内存 cache。
+    // 签发：SQLite INSERT 后必须同步 upsert 新 hash。
+    // 轮换：SQLite 旧行改 grace 后必须同步改/删旧 hash 的 cache，再 upsert 新 hash。
+    //        只 upsert 新行会让旧 token 再活 ≤5s 的 active。
+    // reload（每 5s）只给「别的副本 / 崩溃恢复」用，不能挡新 token。
+    // 撤销：可以等 ≤5s；签发 / 轮换改旧 cache 不行。
+    row := tokenCache.lookup(hash)
+    if row == nil {
+        return nil, ErrUnauthorized  // HTTP 401
+    }
+
+    // 状态检查
+    switch row.Status {
+    case "active":
+        // 通过
+    case "grace":
+        if time.Now().After(row.GraceUntil) {
+            return nil, ErrUnauthorized  // 灰度过期
+        }
+        // 通过（旧 token 仍可用直到 grace_until）
+    case "revoked":
+        return nil, ErrUnauthorized
+    default:
+        return nil, ErrInternal
+    }
+
+    return &AuthContext{
+        ClientID: row.Name,
+        Scopes:   row.Scopes,
+    }, nil
+}
+
+// 异步更新 last_used_at + use_count
+go func() {
+    db.Exec("UPDATE auth_tokens SET last_used_at=?, use_count=use_count+1 WHERE id=?", time.Now(), row.ID)
+}()
+```
+
+#### 6.4.4 轮换（零重启）
+
+```
+webUI → Token 列表 → 选中 token → 点"轮换"
+  ↓
+弹窗确认：轮换将撤销旧 token
+  - 灰度期 = config.auth.grace_period_hours，**默认 0 = 无灰度**（安全感优先）
+  - 配 N = 旧 token 在 grace_until 之前仍可用
+  ↓
+后端（顺序不能反，部分唯一索引要求先腾出名额）：
+  1. 生成新明文 token
+  2. UPDATE 旧行: status='grace', grace_until=now+grace_period_hours
+     # name 不变，audit 的 client_id 不碎
+     # grace_period_hours=0 → grace_until=now（已过期，Authenticate 立刻 401）
+  3. 同步改旧 hash 的 cache：
+     - grace_period_hours > 0 → upsert 旧 hash 为 status='grace' + grace_until
+     - grace_period_hours = 0 → 直接从 cache 删旧 hash（跟撤销同一套）
+     # 只 upsert 新行不够。Authenticate 对 cache 里仍是 active 的旧 hash 不看 grace_until，
+     # 会把旧 token 再当没轮换过的新 token 放行，identity 也会报 active。
+  4. INSERT 新行: 同名 name，status='active'，新 token_hash
+     # 必须在步骤 2 之后。先 INSERT 会撞 UNIQUE INDEX ... WHERE status='active'
+  5. 同步 upsert 新行进 tokenCache（签发必须立刻能用）
+  6. 返回新明文（仅一次）
+  ↓
+旧 token：步骤 3 之后立刻按 grace 规则生效（默认 0 = 立刻 401，不是「再活 5s 的 active」）
+新 token：步骤 5 之后立刻可用（用户复制完马上填进 Agent 不能 401）
+```
+
+**灰度可配**：`config.yaml` 的 `auth.grace_period_hours`（**默认 0**）。设为 N = 灰度 N 小时；设 0 = 无灰度。轮换必须同步改旧 cache；撤销也可以同步删，5s reload 只是兜底。**签发同步写 cache**。
+
+**零重启**：SQLite + 同步写 cache。reload 只给崩溃恢复 / 多副本。
+
+#### 6.4.5 撤销（零重启）
+
+```
+webUI → Token 列表 → 选中 token → 点"撤销"
+  ↓
+弹窗确认（输入 token name 二次确认）
+  ↓
+后端：
+  1. UPDATE auth_tokens SET status='revoked' WHERE id=?
+  2. 同步从 tokenCache 删掉该 hash（撤销也可以同步，5s reload 只是兜底）
+  ↓
+最多再活到下次 reload（SLA ≤ 5s）；同步删了就立刻失效
+```
+
+**零重启**：同上。
+
+#### 6.4.6 审计保证
+
+audit 记录 `client_id`（即 `auth_tokens.name`），**不**记录：
+- 明文 token
+- token hash（hash 是认证凭据，不入审计）
+- grace_until / last_used_at 等
+
+实施位置：`server/mcp/internal/auth/middleware.go` 的 `Authenticate()` 写 ctx → `server/mcp/internal/audit/audit.go` 写库。
+
+### 6.5 占位符约定（公开仓库 + 文档）
+
+- `WORKBASE_TOKEN_<NAME>`：文档里示意 token 时的占位符
+- `REPLACE_WITH_SHA256_HEX`：hash 占位符（**不带** `sha256:` 前缀，统一 hex 字符串）
+- `REPLACE_WITH_*`：config.example.yaml 的占位符
+- 公开仓库 / 设计文档 / commit message / PR description **绝不**出现：
+  - 真实 token 原文
+  - 真实 token hash
+  - 真实 IP / 私钥路径 / 真实密码
+  - `secrets.local.txt` / `config.yaml`（真实值）的内容
 
 ---
 
 ## 7. 权限与 Scope
 
-建议 v0.1 scopes：
+完整 scope 列表和工具权限矩阵在 `SCHEMA.md §2` 维护。设计原则：
 
-```text
-read:manifest       # 读取 workbase.manifest
-read:context        # 读取 context.startup / context.get
-read:knowledge      # 搜索和读取 note/article
-read:project        # 读取 project list/get
-read:registry       # 读取 skill/mcp registry
-write:proposal      # 创建 proposal
-write:inbox         # 追加 / 更新 inbox 待办
-read:inbox          # 读取 inbox 待办
-ops:audit           # 查看审计摘要
-admin:reindex       # 触发重建索引，默认不给普通 Agent
-```
+- 工具注册时声明所需 scope（`srv.AddTool` metadata）
+- HTTP 层校验 token 是否含该 scope
+- tool middleware 记录 audit
+- scope 列表的事实源 = `server/mcp/internal/tools/tools.go` 的 `toolScopes` map
+- 与 `SCHEMA.md §2` 表格**双向校对**（代码改了必须同步文档，反之亦然）
 
-工具权限矩阵：
+修改 scope 列表必须同步：
 
-| Tool | Required scope | v0.1 风险 |
-|---|---|---|
-| `workbase.manifest` | `read:manifest` | low |
-| `context.startup` | `read:context` | medium |
-| `context.get` | `read:context` | medium |
-| `knowledge.search` | `read:knowledge` | medium |
-| `knowledge.get` | `read:knowledge` | high，可能返回私密正文 |
-| `project.list` | `read:project` | medium |
-| `project.get` | `read:project` | high，可能返回项目状态 |
-| `skill.list` | `read:registry` | low/medium |
-| `skill.get` | `read:registry` | medium |
-| `mcp.list` | `read:registry` | medium |
-| `mcp.get` | `read:registry` | medium/high，可能含私密 endpoint |
-| `proposal.create` | `write:proposal` | medium/high |
-| `proposal.list` | `write:proposal` | medium |
-| `proposal.get` | `write:proposal` | medium/high |
-| `inbox.append` | `write:inbox` | low |
-| `inbox.update` | `write:inbox` | low |
-| `inbox.list` | `read:inbox` | low |
-| `inbox.get` | `read:inbox` | low |
-| `audit.list_recent` | `ops:audit` | medium |
+1. `SCHEMA.md §2` 表格
+2. `server/mcp/internal/tools/tools.go` 的 `toolScopes` map
+3. 部署后 token 重新签发（如果新增了 scope）
 
 ---
 
-## 8. 内容可见性模型
+## 8. 可见性模型
 
-所有 Markdown 建议支持 frontmatter：
+完整可见性策略表、缺省规则、敏感模式检测在 `SCHEMA.md §3 + §21` 维护。设计原则：
+
+- `visibility` 字段在 frontmatter 中是单一事实源
+- 取值固定：`public` / `private` / `secret` / `draft`
+- 缺省规则：按文件所在一级目录查表（见 `SCHEMA.md §3.2`）
+- 运行时权威 = `config.yaml` 的 `schema.visibility_policy` / `schema.visibility_default`（启动加载到 `cfg.Schema.*`，运行时**不**再读盘）
+- Go 代码**不持有** visibility 字符串字面量；所有值从 `config.yaml` 加载
+- `SCHEMA.md §3` 是**给人看的说明**，不是 Go 解析输入——改 `SCHEMA.md §3` 后**必须**同步改 `config.yaml` 的 `schema.visibility_*`
+- **不缓存的例外**：`workbase.identity` 的 `name` / `description` / `getting_started` / `critical_rules` / `see_also` 每次调用即时读 vault md（见 §9.1），改完要立即可见
+
+### 8.1 配置加载流程（config.yaml + SCHEMA.md 双文件）
+
+**目标**：Go 代码从单一 YAML 文件读取所有配置 + 策略，**不**开额外文件、**不**解析 Markdown、**不**写硬编码字符串字面量。
+
+#### 8.1.1 文件分工
+
+| 文件 | 用途 | 读取方 |
+|---|---|---|
+| `config.yaml` | **所有结构化数据**（部署配置 + 策略 + 默认值 + 状态机 + 权重） | Go 启动时 `LoadConfig()` |
+| `config.example.yaml` | **公开模板**（含 `REPLACE_WITH_*` 占位符，入库） | 人复制起点 |
+| `SCHEMA.md` | **API 文档**（why / what / 字段说明 / 验收口径） | 人读，**不**被 Go 解析 |
+
+**`config.yaml` 是事实源**。`SCHEMA.md` 里出现的所有结构化字段说明**指向** `config.yaml` 的对应字段，不重复数据。
+
+**同步约束**：人改 `config.yaml` 后**同时**改 `SCHEMA.md` 里的对应字段说明（手工保持一致，类似设计文档 vs 代码字段的双改流程 §0.3）。
+
+**不**单开 `schema.yaml` / `policies.yaml` / `weights.yaml` 等多个文件——文件越多部署越乱。**一个 config.yaml 含所有结构化数据**。
+
+#### 8.1.2 config.yaml 的 `schema` 块结构
 
 ```yaml
-visibility: public | private | secret | draft
+# server/mcp/config.yaml
+# 真实值不入 Git。结构化数据全在这一个文件的 schema 块。
+# 改字段说明 → 同步改 SCHEMA.md
+
+server:
+  listen: 127.0.0.1:8787
+
+admin:
+  listen: 127.0.0.1:8788
+  session_ttl: 3600
+  login_rate_limit: 5
+
+vault:
+  root: /home/studio/workbench
+  git_dir: /home/studio/vault.git
+
+workbase:
+  root: /home/studio/workbench/Workbase    # Vault 内 Registry 源（事实源）
+  runtime: /home/studio/workbase           # 进程运行时私有区，自动拼接 index/proposals/inbox/audit
+  rebuild_cmd: /home/studio/workbase/bin/rebuild-blog.sh
+
+# ============ 可调参数（顶层直读）============
+inbox:
+  retention_days: 7            # done/abandoned 保留天数
+
+index:
+  access:
+    half_life_days: 7         # 艾宾浩斯半衰期
+    min_score: 0.001          # 低于此值不参与 Hot 排序
+
+knowledge:
+  search:
+    weights:                  # 留空 = 用代码内 const 默认值
+      title:            5.0
+      tags:             4.0
+      frontmatter:      3.0
+      section:          2.0
+      fulltext:         1.5
+      wikilink_backref: 2.0
+      access:           1.0
+      recency:          0.5
+    intent_bias:
+      why:     { frontmatter: 1.3, section: 1.3 }
+      when:    { recency: 1.5 }
+      entity:  { tags: 1.3 }
+      general: {}
+
+audit:
+  retention_days: 90          # 审计日志保留天数
+  recent_limit: 100           # audit.list_recent 默认返回条数
+
+# ============ Admin 鉴权（单账号）============
+# 个人工作台只会有一个 admin 账号；凭证直接写在 config.yaml
+admin_auth:
+  user: REPLACE_WITH_ADMIN_USER
+  pass_hash: REPLACE_WITH_SHA256_HEX_ADMIN    # SHA-256(password)，不含 sha256: 前缀
+
+# ============ schema 块：枚举 / 状态机 / 策略（结构化，不重复）============
+schema:
+  # 可见性策略（4 档）—— 启动加载到 cfg.Schema.VisibilityPolicy
+  visibility_policy:
+    public:  "可公开展示与索引"
+    private: "授权 Agent 可读"
+    secret:  "默认不暴露给远程 MCP"
+    draft:   "草稿。授权 MCP 可读；search scope=all / 各 list / context.startup 收录；公开博客不发布"
+
+  # 缺省 visibility（按一级目录）—— 启动加载
+  visibility_default:
+    文章:               public
+    项目:               public
+    友链:               public
+    部署溯源:           private
+    Workbase/context:   private
+    Workbase/skills:    private
+    Workbase/mcps:      private
+    default:            private     # 新增一级目录默认 private（安全开箱即用）
+
+  # 敏感模式。默认 [] = 关闭。个人台要把 Skill / MCP / 文章完整给授权 Agent。
+  sensitive_patterns: []
+
+  # 审计最小字段集
+  audit_min_fields: [ts, tool, client_id, scopes, args_digest, result_status, duration_ms]
+
+  # 审计 result_status 取值
+  audit_result_status: [success, error, unauthorized, forbidden]
+
+  # Proposal 状态机（§17）
+  proposal_states: [pending, approved, applied, rejected, conflict]
+  proposal_state_transitions:
+    pending:  [approved, rejected]   # 创建校验失败是控制层拒绝，不进 conflict
+    approved: [applied, conflict]    # 3-way / commit 只在 approved 之后发生
+    applied:  []
+    rejected: []
+    conflict: [approved]             # 可救回：编辑 payload 后重走 approved；默认换新 base
+
+  # Proposal target / operation 类型
+  proposal_target_types:    [note, context_pack, project, article, skill, mcp_server]
+  proposal_operation_types: [create_file, append, append_section, patch_section, register_item]
+
+  # Inbox 状态机（SCHEMA §17.2）—— pending 可直接 done/abandoned（看板拖拽一步到位）
+  inbox_states: [pending, reviewing, done, abandoned]
+  inbox_state_transitions:
+    pending:   [reviewing, done, abandoned]
+    reviewing: [done, abandoned]
+    done:      []
+    abandoned: []
+
+  # 自动生成 ID 前缀。只给 proposal / inbox。
+  # notes.id = vault 相对路径（正斜杠，含 .md），不用前缀。入库 / 查询一律 ToSlash。
+  id_prefixes:
+    proposal:     "prop"
+    inbox:        "inbox"
 ```
 
-语义：
+> **schema 块只放结构化定义**（枚举 / 状态机 / 可见性 / 敏感模式）。**不**放可调参数——可调参数走顶层 `inbox` / `index` / `knowledge` / `audit`，缺省用代码 const，**一份数字只写一次**。
 
-| visibility | 公开博客 | 公共 Agent Index | 私密 MCP | 说明 |
-|---|---:|---:|---:|---|
-| `public` | yes | yes | yes | 可公开展示 |
-| `private` | no | no | yes | 个人知识库，授权 Agent 可读 |
-| `secret` | no | no | no by default | 默认不暴露给远程 MCP |
-| `draft` | no by default | no | configurable | 草稿，按策略读取 |
+#### 8.1.3 Go 实现（单 LoadConfig + 单 Config struct）
 
-缺省策略建议：
+```go
+// server/mcp/internal/config/config.go
+package config
+
+import (
+    "fmt"
+    "os"
+    "gopkg.in/yaml.v3"
+)
+
+type Config struct {
+    Server     ServerConfig     `yaml:"server"`
+    Admin      AdminConfig      `yaml:"admin"`        // listen / session_ttl / login_rate_limit
+    AdminAuth  AdminAuthConfig  `yaml:"admin_auth"`   // 单账号 user / pass_hash
+    Auth       AuthConfig       `yaml:"auth"`         // grace_period_hours（Token 主体在 SQLite，不在 yaml）
+    Vault      VaultConfig      `yaml:"vault"`
+    Workbase   WorkbaseConfig   `yaml:"workbase"`
+    Inbox      InboxConfig      `yaml:"inbox"`        // retention_days
+    Index      IndexConfig      `yaml:"index"`        // access.{half_life_days,min_score}
+    Knowledge  KnowledgeConfig  `yaml:"knowledge"`    // search.weights / search.intent_bias
+    Audit      AuditConfig      `yaml:"audit"`        // retention_days / recent_limit
+    Schema     Schema           `yaml:"schema"`       // 仅结构化（枚举/状态机/visibility/敏感）
+}
+
+type AdminAuthConfig struct {
+    User     string `yaml:"user"`
+    PassHash string `yaml:"pass_hash"`
+}
+
+type AuthConfig struct {
+    GracePeriodHours int `yaml:"grace_period_hours"`  // 0 = 无灰度。轮换同步改/删旧 cache；撤销 SLA ≤5s
+}
+
+type Schema struct {
+    VisibilityPolicy          map[string]string          `yaml:"visibility_policy"`
+    VisibilityDefault         map[string]string          `yaml:"visibility_default"`
+    SensitivePatterns         []string                   `yaml:"sensitive_patterns"`
+    AuditMinFields            []string                   `yaml:"audit_min_fields"`
+    AuditResultStatus         []string                   `yaml:"audit_result_status"`
+    ProposalStates            []string                   `yaml:"proposal_states"`
+    ProposalStateTransitions  map[string][]string        `yaml:"proposal_state_transitions"`
+    ProposalTargetTypes       []string                   `yaml:"proposal_target_types"`
+    ProposalOperationTypes    []string                   `yaml:"proposal_operation_types"`
+    InboxStates               []string                   `yaml:"inbox_states"`
+    InboxStateTransitions     map[string][]string        `yaml:"inbox_state_transitions"`
+    IdPrefixes                map[string]string          `yaml:"id_prefixes"`
+}
+
+var cfg *Config
+
+// LoadConfig 启动时调用一次，解析 config.yaml
+func LoadConfig(path string) error {
+    raw, err := os.ReadFile(path)
+    if err != nil {
+        return fmt.Errorf("read config.yaml: %w", err)
+    }
+
+    c := &Config{}
+    if err := yaml.Unmarshal(raw, c); err != nil {
+        return fmt.Errorf("parse config.yaml: %w", err)
+    }
+
+    if len(c.Schema.VisibilityPolicy) == 0 {
+        return fmt.Errorf("config.yaml: schema.visibility_policy 不能为空")
+    }
+    if c.AdminAuth.User == "" || c.AdminAuth.PassHash == "" {
+        return fmt.Errorf("config.yaml: admin_auth.user / pass_hash 必填")
+    }
+
+    cfg = c
+    return nil
+}
+
+func GetConfig() *Config { return cfg }
+```
+
+#### 8.1.4 为什么 config.yaml 一个文件含所有结构化数据
+
+| 方案 | 文件数 | 优点 | 缺点 |
+|---|---|---|---|
+| 多个文件（schema + policies + weights） | 3+ | 关注分离 | 部署要管 3+ 文件；改一个忘了同步另几个 |
+| **单 config.yaml** | 1 | **一个文件含所有；改一处一眼看到全貌** | 文件稍大（但仍是 KB 级） |
+
+**结论**：单文件部署友好。**关注分离 = 文件级，粒度按需**——一个文件 1-2KB 是合理。
+
+#### 8.1.5 调用栈
 
 ```text
-现有公开博客内容如无 visibility，暂按 public 兼容。
-Workbase/context 默认 private。
-Workbase/skills 可 public/private。
-Workbase/mcps 可 public/private。
-部署溯源默认 private。
-secret 必须显式标注。
-
-（inbox 只存 VPS 私有区 `/home/studio/workbase/inbox/`，不进入 Vault，因此不参与 visibility 判定。）
+main()
+  ↓ LoadConfig("./config.yaml")              // 启动时一次（YAML 解析，含 schema 块）
+  ↓ srv := tools.NewServer(cfg)
+  ↓ srv.Start(":8787")
+  ↓
+请求进来
+  ↓ auth.Middleware
+  ↓ → tokenCache.lookup(hash)                    // 只读内存 cache，不每请求查 SQLite
+  ↓ → cfg.Schema.GetVisibilityPolicy()           // 从内存 Config（YAML 加载）
+  ↓ → tools.HandleWorkbaseIdentity()             // 读 vault md 即时 + cfg
 ```
 
-敏感模式拦截：
+#### 8.1.6 修改生效
 
-```text
-真实 VPS IP
-token / api_key / secret
-私钥路径
-ssh private key block
-.env 内容
-Cookie / Authorization header
-```
+- 改 `config.yaml`（任何字段）→ 重启 MCP（`systemctl restart jiangnan-workbase-mcp`）→ 重新 `LoadConfig()` → 内存 Config 替换
+- **不**支持热更新，也**不**吃 SIGHUP。Go 默认不处理 reload；写成 `reload` 等于没重启
+- 例外：`workbase.identity.workbase.*` 字段每次调用即时读 vault md（§9.1）
+- Token 签发 / 轮换 / 撤销走 SQLite + 同步改 cache，**不用**重启
+
+#### 8.1.7 单元测试
+
+- 写 fixture `config.yaml` → 测 `LoadConfig()` 所有字段正确
+- 改 fixture 一行 → 期望值变 → 确认 LoadConfig 重新 parse
+- 故意写无效 YAML → 测 `LoadConfig()` 返回 error
+- 故意缺必填字段（如 `schema.visibility_policy`）→ 测 `LoadConfig()` 返回 error
+- 测 `GetConfig()` 返回非 nil + 字段正确
+
 
 ---
 
-## 9. MCP 工具集 v0.1
+## 9. MCP 工具集
 
-最终工具集保持克制。
+19 个工具，每个的字段映射（请求/返回/状态码/错误）在 `SCHEMA.md §4-§20` 维护（一工具一节，§12 为预留跳号，§21 是敏感模式，§22-§27 是结构化 / 状态机 / 算法 / 落点 / 修改流程）。本节列用途和关键设计。
 
 ```text
-workbase.manifest
-
-context.startup
-context.get
-
-knowledge.search
-knowledge.get
-
-project.list
-project.get
-
-skill.list
-skill.get
-
-mcp.list
-mcp.get
-
-proposal.create
-proposal.list
-proposal.get
-
-inbox.append
-inbox.update
-inbox.list
-inbox.get
-
-audit.list_recent
+workbase.identity          SCHEMA.md §4
+context.startup           SCHEMA.md §5
+context.get               SCHEMA.md §6
+knowledge.search          SCHEMA.md §7
+knowledge.get             SCHEMA.md §8
+project.list              SCHEMA.md §9
+project.get               SCHEMA.md §9.3
+skill.list                SCHEMA.md §10
+skill.get                 SCHEMA.md §10.3
+mcp.list                  SCHEMA.md §11
+mcp.get                   SCHEMA.md §11.3
+proposal.create           SCHEMA.md §13
+proposal.list             SCHEMA.md §14
+proposal.get              SCHEMA.md §15
+inbox.append              SCHEMA.md §16
+inbox.update              SCHEMA.md §17
+inbox.list                SCHEMA.md §18
+inbox.get                 SCHEMA.md §19
+audit.list_recent         SCHEMA.md §20
 ```
 
-### 9.1 `workbase.manifest`
+### 9.1 workbase.identity
 
-用途：让新 Agent 知道这个 Workbase 是什么、支持什么能力、边界是什么。
+让新 Agent 知道 **Workbase 是什么** + **自己能做什么**。一次调用两个块都拿到。
 
-返回字段：
+**所有 token 调用都需要**（MCP 协议无公开 endpoint）。任意有效 token 即可调，**不**要求额外 scope。
+
+#### 9.1.1 Workbase 描述性字段（从 vault 即时读）
+
+| 字段 | 数据源 | 读取方式 |
+|---|---|---|
+| `id` | Go 常量 | MCP 协议层标识符（`jiangnan-workbase`） |
+| `name` | `Workbase/mcps/jiangnan-workbase.md` frontmatter `name` | YAML 解析 |
+| `version` | Go 常量 | MCP 协议层版本（`0.1.0`） |
+| `description` | `Workbase/mcps/jiangnan-workbase.md` frontmatter `summary` | YAML 解析 |
+| `capabilities` | 运行时聚合 | `srv.AddTool` 注册（哪些工具存在） |
+| `tools` | 运行时聚合 | `toolScopes` keys |
+| `visibility_policy` | `config.yaml` `schema.visibility_policy` | YAML 解析（结构化数据，不走 Vault） |
+| `getting_started` | `Workbase/mcps/jiangnan-workbase.md` `## Purpose` | frontmatter 后正文 |
+| `critical_rules` | `Workbase/mcps/jiangnan-workbase.md` `## Security` | `-` 列表解析 |
+| `see_also` | `Workbase/mcps/jiangnan-workbase.md` `## Source` | 链接解析 |
+
+**读取策略**：
+
+- 每次调用即时读磁盘，**不缓存**
+- 任一文件读取/解析失败 → 返回 MCP error，**不**静默 fallback 到硬编码
+
+修改 Workbase 描述 = 修改 vault md + `sync.ps1` 推送 → 不重新编译 Go。
+
+#### 9.1.2 Auth 字段（当前 token 元数据）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `client_id` | string | token 名称（即 `auth_tokens.name`） |
+| `scopes` | []string | 该 token 拥有的 scope 列表 |
+| `status` | enum | `active` / `grace`。`revoked` 过不了 middleware，identity 返回不了 |
+| `created_at` | RFC3339 | token 创建时间 |
+| `last_used_at` | RFC3339，可选 | 从未用过 → 省略或 `null`。不要空串 / 零时间 |
+| `use_count` | int | 新 token = 0。本次 +1 是认证后异步写，本响应可能还是旧值 |
+| `allowed_tools` | []string | 由 `scopes` × `toolScopes` 推导出的可调用工具列表（前端友好） |
+
+**不返回**（敏感信息）：
+
+- token 原文
+- token hash
+- `grace_until`
+- 撤销者 / 创建者真实身份
+
+#### 9.1.3 完整响应示例
 
 ```json
 {
-  "id": "jiangnan-workbase",
-  "name": "遇见江楠 · Agent Workbase",
-  "version": "0.1.0",
-  "description": "Blog as Agent Workbase",
-  "capabilities": {
-    "context": true,
-    "knowledge": true,
-    "project": true,
-    "skill_registry": true,
-    "mcp_registry": true,
-    "proposal": true,
-    "inbox": true,
-    "direct_write": false,
-    "vector_search": false
+  "workbase": {
+    "id": "jiangnan-workbase",
+    "name": "Jiangnan Workbase MCP",
+    "version": "0.1.0",
+    "description": "私密个人 Agent 工作基座",
+    "capabilities": {
+      "context": true, "knowledge": true, "project": true,
+      "skill_registry": true, "mcp_registry": true,
+      "proposal": true, "inbox": true,
+      "direct_write": false, "vector_search": false
+    },
+    "tools": [
+      "workbase.identity", "context.startup", "context.get",
+      "knowledge.search", "knowledge.get",
+      "project.list", "project.get",
+      "skill.list", "skill.get",
+      "mcp.list", "mcp.get",
+      "proposal.create", "proposal.list", "proposal.get",
+      "inbox.append", "inbox.update", "inbox.list", "inbox.get",
+      "audit.list_recent"
+    ],
+    "visibility_policy": {
+      "public": "可公开展示与索引",
+      "private": "授权 Agent 可读",
+      "secret": "默认不暴露给远程 MCP",
+      "draft": "草稿。授权 MCP 可读；search scope=all / 各 list / context.startup 收录；公开博客不发布"
+    },
+    "getting_started": "...",
+    "critical_rules": ["HTTPS", "visibility", "token+scope", "audit"],
+    "see_also": ["https://github.com/Luo-root/jiangnan-blog"]
   },
-  "visibility_policy": {
-    "public": "可公开展示与索引",
-    "private": "授权 Agent 可读",
-    "secret": "默认不暴露给远程 MCP",
-    "draft": "草稿，按策略读取"
-  },
-  "tools": ["context.startup", "knowledge.search"]
-}
-```
-
-### 9.2 `context.startup`
-
-用途：给新 Agent 一份启动上下文，让它快速进入状态。
-
-它是派生结果，不是直接写入目标。
-
-来源：
-
-```text
-Workbase/context/profile.md
-Workbase/context/engineering-style.md
-Workbase/context/security-boundaries.md
-Workbase/context/active-projects.md
-Workbase/context/recent-focus.md
-```
-
-返回内容：
-
-```text
-身份与语言
-工程偏好
-安全边界
-活跃项目
-当前重点
-下一步
-建议读取的 context packs
-```
-
-### 9.3 `context.get`
-
-用途：读取具体 context pack。
-
-请求：
-
-```json
-{
-  "id": "engineering-style"
-}
-```
-
-返回：
-
-```json
-{
-  "id": "engineering-style",
-  "title": "工程风格",
-  "visibility": "private",
-  "updated_at": "2026-08-17T17:00:00+08:00",
-  "content": "...markdown...",
-  "metadata": {}
-}
-```
-
-### 9.4 `knowledge.search`
-
-用途：搜索授权范围内的知识库。
-
-请求：
-
-```json
-{
-  "query": "Agent Workbase proposal",
-  "scope": "all",
-  "intent": "general",
-  "limit": 10
-}
-```
-
-返回摘要要足够让 Agent 判断是否值得 get：
-
-```json
-{
-  "results": [
-    {
-      "id": "note_xxx",
-      "title": "Agent Workbase MCP 设计",
-      "path_hint": "Workbase/...",
-      "type": "note",
-      "visibility": "private",
-      "summary": "...",
-      "matched_fields": ["title", "heading", "body"],
-      "score": 0.92,
-      "matched_via": "ft5_fulltext + wikilink_backref",
-      "signals": {
-        "ft5_fulltext": 0.85,
-        "wikilink_backref": 0.40,
-        "frontmatter": 0.30,
-        "access": 0.25,
-        "recency": 0.20
-      }
-    }
-  ]
-}
-```
-
-`intent` 可选，取值 `why` / `when` / `entity` / `general`（默认 `general`），用于调整各信号排序权重：`why` 抬高反链（因果上下文）权重、`when` 抬高 frontmatter 时间权重、`entity` 抬高 title/tags/正链权重。`signals` 把 `score` 拆成可解释分，`matched_via` 标注命中了哪些信号——让 Agent 面对的是可解释的信号分解，而不是黑盒分数。其中 `access` 反映读取热度（见 §19.4）。
-
-### 9.5 `knowledge.get`
-
-用途：读取具体 note/article/context 源内容。
-
-请求：
-
-```json
-{
-  "id": "note_xxx",
-  "include": ["content", "metadata", "links"]
-}
-```
-
-返回：
-
-```json
-{
-  "id": "note_xxx",
-  "title": "...",
-  "type": "article|note|context_pack|project|skill|mcp_server",
-  "visibility": "private",
-  "frontmatter": {},
-  "content": "...markdown...",
-  "links": {
-    "forward": [],
-    "backlinks": []
-  },
-  "base_commit": "abc123"
-}
-```
-
-### 9.6 `project.list`
-
-用途：列出项目摘要。
-
-`list` 不只是 title，要返回可判断相关性的摘要。
-
-```json
-{
-  "projects": [
-    {
-      "id": "jiangnan-workbase",
-      "name": "遇见江楠 · Agent Workbase",
-      "summary": "博客即 Agent 工作基座",
-      "status": "active",
-      "current_focus": "MCP v0.1 设计",
-      "tags": ["blog", "agent", "mcp"]
-    }
-  ]
-}
-```
-
-### 9.7 `project.get`
-
-用途：读取项目完整上下文。
-
-返回：
-
-```text
-项目定位
-当前状态
-当前重点
-关键决策
-下一步
-风险
-关联文章/笔记
-仓库/部署信息的脱敏描述
-```
-
-### 9.8 `skill.list`
-
-用途：列出 Skill Registry 摘要。
-
-`list` 必须返回足够信息，不是只返回 title。
-
-```json
-{
-  "skills": [
-    {
-      "id": "markdown-lint",
-      "name": "Markdown Lint",
-      "summary": "检查 Markdown fence/frontmatter/异常长代码块",
-      "tags": ["markdown", "lint"],
-      "visibility": "public",
-      "risk": "low",
-      "source": {
-        "type": "github",
-        "url": "https://example.com/..."
-      }
-    }
-  ]
-}
-```
-
-### 9.9 `skill.get`
-
-用途：返回 Skill 完整定义。
-
-不做安装器，只返回可信来源、元信息、正文。
-
-```json
-{
-  "id": "markdown-lint",
-  "name": "Markdown Lint",
-  "summary": "...",
-  "visibility": "public",
-  "risk": "low",
-  "source": {},
-  "content_type": "text/markdown",
-  "content": "# Markdown Lint\n..."
-}
-```
-
-### 9.10 `mcp.list`
-
-用途：列出 MCP Registry 摘要。
-
-```json
-{
-  "servers": [
-    {
-      "id": "jiangnan-workbase",
-      "name": "Jiangnan Workbase MCP",
-      "summary": "私密个人知识基座 MCP",
-      "transport": "streamable-http",
-      "endpoint_hint": "https://mcp.<domain>/mcp",
-      "auth": "bearer",
-      "visibility": "private",
-      "risk": "personal-knowledge-base"
-    }
-  ]
-}
-```
-
-### 9.11 `mcp.get`
-
-用途：返回 MCP Server 完整定义。
-
-不教 Agent 怎么安装，只提供接入所需事实：
-
-```json
-{
-  "id": "jiangnan-workbase",
-  "transport": "streamable-http",
-  "endpoint": "https://mcp.<domain>/mcp",
   "auth": {
-    "type": "bearer",
-    "token_hint": "Use your own environment variable. Never hardcode token."
-  },
-  "scopes": ["read:context", "read:knowledge", "write:proposal"],
-  "tools": ["context.startup", "knowledge.search"],
-  "source": {
-    "repo": "https://github.com/Luo-root/jiangnan-workbase"
+    "client_id": "minimax-code",
+    "scopes": ["read:context", "read:knowledge", "write:proposal", "write:inbox", "read:inbox"],
+    "status": "active",
+    "created_at": "2026-08-18T22:00:00+08:00",
+    "last_used_at": "2026-08-19T14:00:00+08:00",
+    "use_count": 1234,
+    "allowed_tools": [
+      "workbase.identity", "context.startup", "context.get",
+      "knowledge.search", "knowledge.get",
+      "proposal.create", "proposal.list", "proposal.get",
+      "inbox.append", "inbox.update", "inbox.list", "inbox.get"
+    ]
   }
 }
 ```
 
-### 9.12 `proposal.create`
+**注意**：`workbase.tools` 是 Workbase 提供的所有工具；`auth.allowed_tools` 是当前 token 可调的工具子集。两者关系：`auth.allowed_tools ⊆ workbase.tools`。
 
-用途：创建统一写入意图。
-
-```json
-{
-  "kind": "context_update",
-  "target": {
-    "type": "context_pack",
-    "id": "active-projects",
-    "path": "Workbase/context/active-projects.md"
-  },
-  "operation": {
-    "type": "patch_section",
-    "section": "遇见江楠 Workbase / 当前重点"
-  },
-  "payload": {
-    "format": "markdown",
-    "content": "当前重点：固化 Proposal 写入协议。"
-  },
-  "reason": "记录本轮设计决策"
-}
-```
-
-### 9.13 `proposal.list` / `proposal.get`
-
-用途：Agent 查询自己创建过的 proposal 条目。
-
-proposal 和 inbox 都只存储在 VPS 私有区：
+#### 9.1.4 Agent 典型用法
 
 ```text
-/home/studio/workbase/proposals/
-/home/studio/workbase/inbox/
+1. Agent 连上 MCP（initialize）
+2. 调 workbase.identity
+   → 知道 Workbase 是什么（workbase 块）
+   → 知道自己能干啥（auth.allowed_tools）
+3. 按 allowed_tools 调用对应工具
+4. 遇到 401 / 403 时再调 workbase.identity 看 scope 是否变化
 ```
 
-不进入本地 Obsidian Vault。用户的阅读和审批通过 webUI 完成（见 §21.5），不走 MCP 工具。
+#### 9.1.5 实施位置
 
-`proposal.list` 返回 pending / approved / applied / rejected / conflict 条目的摘要列表；`proposal.get` 返回单条完整内容（含 diff/preview 和 receipt）。
+- `server/mcp/internal/tools/identity.go`（新文件）
+- `server/mcp/internal/auth/middleware.go` 的 `Authenticate()` 返回 `AuthContext{ClientID, Scopes, Status}` → 注入请求 ctx
+- `toolScopes` 中 `workbase.identity` 的 `RequiredScope` 设为空字符串（任意有效 token）
 
-Agent 可以查看自己的 proposal 状态，但不能直接 approve/reject。审批仅限 webUI 操作。
 
-### 9.14 `inbox.append`
+### 9.2 context.startup
 
-用途：新建一条待办（todo），初始状态 `pending`。只存 VPS，不进本地 Vault。
+给新 Agent 一份启动上下文，快速进入状态。**派生结果**，不直接手写或 patch。来源：`Workbase/context/*.md` 中 `startup: true` **且** `visibility ≠ secret` 的 pack，按 `priority` 排序后合成。secret 永不进合成；draft 照收。
 
-请求：
+### 9.3 context.get
 
-```json
-{
-  "kind": "inbox_todo",
-  "payload": {
-    "format": "markdown",
-    "content": "## 待办：排查博客搜索高亮样式\n..."
-  },
-  "reason": "本轮讨论遗留的跟进事项"
-}
+读取具体 context pack。请求 `{id}`，返回 frontmatter + 正文（去 frontmatter）。draft 放行（有 `read:context` 即可）；secret 默认 `secret_blocked`。
+
+### 9.4 knowledge.search
+
+搜索授权范围内的知识库。**信号权重**可配（config 覆盖 + 代码默认 fallback）：
+
+```yaml
+# config.yaml
+knowledge:
+  search:
+    weights:                  # 可选覆盖
+      title: 5.0              # 命中 title 时加 5.0 分
+      tags: 4.0               # 命中 tags 时加 4.0 分
+      frontmatter: 3.0        # 命中 frontmatter 任意字段时加 3.0 分
+      section: 2.0            # 命中 heading 段时加 2.0 分
+      fulltext: 1.5           # 正文 FTS5 命中时加 1.5 分
+      wikilink_backref: 2.0   # WikiLink 反链命中时加 2.0 分
+      access: 1.0             # 艾宾浩斯热度（见 §25）
+      recency: 0.5            # 时间衰减
 ```
 
-返回：
+**score 计算**（**绝对分制**，不归一化）：
+- `score = Σ (命中信号的 weight)`
+- `0` = 无任何命中（**门禁失败，不入结果**）
+- 越大 = 越相关
+- 物理意义 = "这条结果有多匹配查询"（简单可解释）
+- 不同查询的 score **不可直接比较**（每次查询的满分不同）
+- 排序用 score 降序即可
 
-```json
-{
-  "id": "inbox_20260818_001",
-  "status": "pending",
-  "location": "/home/studio/workbase/inbox/2026-08-18T10-32-38.md"
-}
-```
+例：
+- 仅 frontmatter 命中 → `score = 3.0`
+- title (5.0) + fulltext (1.5) 命中 → `score = 6.5`
+- 仅 access / recency / wikilink_backref 命中 → `score = 0`，不入结果
+- title (5.0) + recency (0.5) 命中 → `score = 5.5`（recency 不算门禁字段，但不影响 score）
 
-约束：
+**intent 调整**（事实源 = `config.yaml` 的 `knowledge.search.intent_bias`，绝对倍率）：
 
-```text
-1. 只能 append 到 inbox 目录。
-2. 文件名带时间戳（日期 + 时间），因为一天可能有多条，日期不够区分。
-3. 不能覆盖已有正式 Vault 文件。
-4. 必须过敏感信息检测。
-5. 不进入本地 Obsidian；它是一条待办，不是知识写入。
-```
-
-### 9.15 `inbox.update` / `inbox.list` / `inbox.get`
-
-inbox 是待办，Agent 和 WebUI 都能「创建」「编辑内容」「调整状态」。
-
-`inbox.update` 编辑单条内容或改变状态：
-
-```json
-{
-  "id": "inbox_20260818_001",
-  "status": "reviewing",
-  "payload": {
-    "format": "markdown",
-    "content": "（可选，替换正文）"
-  }
-}
-```
-
-状态机：
-
-```text
-pending → reviewing → done | abandoned
-```
-
-| 状态 | 含义 |
+| intent | 调整 |
 |---|---|
-| `pending` | 待处理（刚创建，还没做） |
-| `reviewing` | 待审核（已做完，等确认；不是 Proposal 审批，不触发 apply/commit） |
-| `done` | 已完成（审核通过） |
-| `abandoned` | 已废弃（不再需要处理） |
+| `why` | `frontmatter` weight × 1.3 + `section` weight × 1.3 |
+| `when` | `recency` weight × 1.5 |
+| `entity` | `tags` weight × 1.3 |
+| `general` | 无调整 |
 
-生命周期：
+默认值在 `server/mcp/internal/search/weights.go` 内 const。逻辑 = 标准 fallback：cfg 有值用 cfg，没值用 const。
 
-```text
-done / abandoned 保留 7 天后自动删除。
-pending / reviewing 保留到状态改变为止，不设自动删除。
-```
+**命中门禁与排序分离**：
 
-`inbox.list` 返回摘要列表：
+- 命中门禁：至少一个 `title` / `tags` / `frontmatter` / `section` / `fulltext` 命中才入结果
+- 排序信号：上面全部 + `wikilink_backref` / `access` / `recency`
+
+`intent` 参数（`why` / `when` / `entity` / `general`）调整权重偏向。`access` 信号使用艾宾浩斯曲线（见 §25）。
+
+**visibility 过滤**：`scope=all` = public + private + **draft**。`scope=public` / `private` 各只出对应档。**secret 永远不进 search**（含摘要）。secret 只走 `knowledge.get` 显式 id，且默认 `secret_blocked`。`visibility=draft` 有 `read:knowledge` 就能 get。Vite 继续跳过 `draft: true` 或 `visibility: draft`。
+
+**kind**：缺省才用 `["note","article"]`。已传则只保留这两个，其它值丢掉；**过滤后为空 → 空结果，不回落默认**。`kind=["project"]` 不是默认的 note+article。想搜 project 走 `project.list`。
+
+**不静默回落**：`intent` / `scope` 非法值 → `invalid_argument`，不回落 `general` / `all`。详见 `SCHEMA.md §7.7`。
+
+**空结果兜底**（用户搜索无结果时）：
 
 ```json
+// 任一门禁字段未命中 / 全部结果 score=0
 {
-  "items": [
-    {
-      "id": "inbox_20260818_001",
-      "created_at": "2026-08-18T10:32:38+08:00",
-      "updated_at": "2026-08-18T15:00:00+08:00",
-      "created_by": "minimax-code",
-      "summary": "待办：排查博客搜索高亮样式",
-      "status": "done"
-    }
-  ]
+  "results": [],
+  "message": "未查询到相关内容",
+  "suggestions": [
+    "缩短关键词：去掉修饰词（'的'/'一个'/'关于'）",
+    "改用更通用的词：例如 'kubernetes' 替代 'k8s pod 调度'",
+    "检查 scope 权限：当前 token scope 是否包含 read:knowledge",
+    "检查 visibility：public 内容只能搜到 public 知识"
+  ],
+  "query_echo": "Agent Workbase proposal",
+  "executed_signals": ["title", "tags", "frontmatter", "section", "fulltext"]
 }
 ```
 
-`inbox.get` 返回单条完整内容：
+**不**返回 MCP `error`（"未查询到" ≠ "查询失败"）。错误码统一留给：
+- `invalid_argument`（参数缺失 / 类型错）
+- `internal_error`（SQLite / FS 故障）
+- `unauthorized`（token 无效 / scope 不足）
 
-```json
-{
-  "id": "inbox_20260818_001",
-  "status": "done",
-  "content": "...markdown..."
-}
-```
+### 9.5 knowledge.get
 
-用户对 inbox 的浏览、编辑与状态调整走 webUI（见 §21.5），也可通过 MCP 工具操作。
+按 `id` 读取笔记正文。`id` = `notes.id` = vault 相对路径（正斜杠，含 `.md`）；请求里的 `\` 先 `filepath.ToSlash` 再查。返回 `id` / `title` / `path_hint` / `visibility` / `updated_at` / `body` / `frontmatter` / `forward_links` / `backlinks` / `base_commit`。
 
-### 9.16 `audit.list_recent`
+- `visibility=secret` 默认 `secret_blocked`，**不**返回内容
+- `visibility=draft` 放行（有 `read:knowledge` 即可）
+- 授权范围内的正文**原样返回**（敏感模式默认关，见 §20.2 / SCHEMA §21）
+- `base_commit` 字段供 proposal 写入使用
 
-用途：查看最近访问元信息。
+### 9.6 project.list / 9.7 project.get
 
-请求：
+读 `项目/*.md`。`get` 返回项目当前重点、决策、下一步（按 frontmatter 字段映射）。list 出 public + private + draft，不出 secret。get 对 draft 放行；secret 默认 `secret_blocked`。
 
-```json
-{
-  "mode": "detail",
-  "limit": 20
-}
-```
+### 9.8 skill.list / 9.9 skill.get
 
-`mode` 取值：
+读 `Workbase/skills/*.md`。`list` 返回摘要 + 风险 + 来源 + 标签；`get` 返回 frontmatter + 完整正文。list / get 对 draft / secret 的规则与 project 相同（scope 换成 `read:registry`）。
 
-| mode | 返回内容 | 用途 |
+### 9.10 mcp.list / 9.11 mcp.get
+
+读 `Workbase/mcps/*.md`。`list` 返回摘要 + transport + auth + risk + source；`get` 返回 endpoint + auth + scopes + tools + 正文。list / get 对 draft / secret 的规则与 project 相同（scope 换成 `read:registry`）。
+
+### 9.12 proposal.create
+
+创建 proposal。客户端可传可选 `expected_base`（通常是刚读到的 `knowledge.get.base_commit`）：
+
+- 不传 → 服务端读当前 HEAD 写入 `base_commit`
+- 有传且等于当前 HEAD → 用这个值
+- 有传但对不上 → 拒绝，`stale_base`，提示「你读的已经不是最新」
+
+请求 schema 在 `SCHEMA.md §13`。枚举合法 ≠ 一定受理：`target.type` × `operation.type` 必须在 §15.7 矩阵内，否则 `operation_not_supported`。
+
+### 9.13 proposal.list / 9.14 proposal.get
+
+按 status / created_by / time 范围列出 / 读取单条。`get` 返回完整 proposal + receipt（含 commit / content_sha256 / replayed）。
+
+### 9.15 inbox.append / 9.16 inbox.update
+
+新建 pending 待办 / 编辑内容或改变状态。不进 Vault，不触发 apply / commit。敏感模式开启且命中 → 响应 `warnings`，照样创建/更新。`warnings` **不**写进 `{id}.md`。
+
+### 9.17 inbox.list / 9.18 inbox.get
+
+按 status / created_by / time 列出 / 读取单条。`get` 每次读再扫一遍 content 填 `warnings`。`list` 不返回 `warnings`。`done` / `abandoned` 超过 `retention_days` 不返回（已自动删除）。
+
+### 9.19 audit.list_recent
+
+按 time 范围 / client_id / tool 过滤，返回审计摘要。详细 schema 在 `SCHEMA.md §20`。---
+
+## 10. Skill Registry
+
+事实源：`Workbase/skills/*.md`。frontmatter schema 在 `SCHEMA.md §10.1`。正文固定小节：`# Name` / `## Purpose` / `## When to use` / `## Inputs` / `## Outputs` / `## Procedure` / `## Safety` / `## Source`。
+
+不提供 `skill.get_install_guide`，安装方式如有必要写进 Skill 正文。
+
+---
+
+## 11. MCP Registry
+
+事实源：`Workbase/mcps/*.md`。frontmatter schema 在 `SCHEMA.md §11`。`mcp.list` / `mcp.get` 差异在 `SCHEMA.md §11.2-§11.4`。
+
+不提供 `mcp.get_connection_guide`，Agent 自行适配。
+
+---
+
+## 12. Project Registry
+
+事实源：`项目/*.md`。frontmatter schema 在 `SCHEMA.md §9`。字段映射在 `SCHEMA.md §9.2-§9.3`。
+
+---
+
+## 13. Knowledge Note
+
+事实源 = indexer 标成 `note` 或 `article` 的 md：
+
+- `文章/**/*.md` → `kind=article`
+- vault 里其它未被排除的 md（含 `部署溯源/`；以及 `Workbase/` 下除 `context/` `skills/` `mcps/` 以外、有人误放的 md）→ `kind=note`
+
+**`notes.id` = vault 相对路径**（正斜杠，含 `.md`，如 `文章/foo.md`）。跨目录唯一。不要只拿文件名。`knowledge.search` / `knowledge.get` 的 `id` 跟这一条走。skill / mcp / context 对外仍用 frontmatter `id`，和 notes PK 是两套。
+
+**路径归一**：入库和查询一律 `filepath.ToSlash`。请求里的 `\` 先归一再查。Windows 上 `filepath.Rel` 会吐反斜杠，不归一则 get 404、WikiLink 对不上。旧 `vault.go:noteID()` 还 `TrimSuffix(rel, ".md")`——那是旧代码，不要当规格。
+
+WikiLink 解析：先按完整相对路径（去 `.md`），再按文件名唯一匹配。重名只记 `raw`，不建边——避免 `文章/foo.md` 和 `部署溯源/foo.md` 撞车。`links.source_id` / `target_id` 都是 `notes.id`。
+
+**不进 knowledge**（indexer 直接跳过或标成别的 kind）：
+
+- `友链/`：跳过，不入库
+- `项目/`：`kind=project`，只走 `project.*`
+- `Workbase/context|skills|mcps/`：各自 kind，只走对应工具
+
+`knowledge.search` 默认 `kind=["note","article"]`，`scope=all` 含 `draft`。已传 `kind` 只保留 `note`/`article`；过滤后为空 → 空结果，不回落默认。响应 `kind` 原样返回，**不要**固定写成 `note`。没有 `article.list` / `article.get`。
+
+`knowledge.get` 只返回 `kind ∈ {note, article}`。其它 kind（即使 `notes.id` 对得上）→ `note not found`，不泄露是 skill。`visibility=draft` 放行；`secret` 默认 `secret_blocked`。
+
+frontmatter 见 `SCHEMA.md §22`，indexer 表见 `SCHEMA.md §23`。
+
+---
+
+## 14. Workbase 目录分类
+
+`Workbase/` 下文件按 `kind` 字段或所在一级目录分类（fallback）：
+
+| 工具 | 能访问的 kind | 数据源 |
 |---|---|---|
-| `detail` | 操作名、时间、scope、目标 id（不含正文/查询原文） | 本机自查 |
-| `hashed` | 操作名、时间、SHA-256 内容哈希（不含正文/查询原文） | 跨 Agent/设备边界对齐，不泄密 |
+| `workbase.identity` | mcp_server | `Workbase/mcps/jiangnan-workbase.md` |
+| `context.startup/get` | context_pack | `Workbase/context/*.md` |
+| `knowledge.search/get` | `note` + `article` | `文章/` 以及未被排除的普通 md。默认 search 两者都收。get 其它 kind → `note not found` |
+| `project.list/get` | project | `项目/*.md` |
+| `skill.list/get` | skill | `Workbase/skills/*.md` |
+| `mcp.list/get` | mcp_server | `Workbase/mcps/*.md`（除自己） |
 
-不返回 token，不返回完整私密正文。
-
----
-
-## 10. Resource 设计
-
-可选暴露 MCP resources：
-
-```text
-workbase://manifest
-context://startup
-context://packs/{id}
-knowledge://notes/{id}
-project://{id}
-skill://{id}
-mcp-server://{id}
-proposal://{id}
-inbox://{id}
-```
-
-v0.1 可以先只实现 tools，不强制 resources。
-
----
-
-## 11. Prompt 设计
-
-可选 prompts：
-
-```text
-startup-brief
-project-handoff
-session-summary-to-inbox
-decision-record-proposal
-lesson-capture-proposal
-skill-register-proposal
-mcp-register-proposal
-```
-
-v0.1 可以先写入文档，不急着实现。
-
----
-
-## 12. Context Pack 设计
-
-### 12.1 目录
-
-```text
-Workbase/context/
-├── profile.md
-├── engineering-style.md
-├── security-boundaries.md
-├── active-projects.md
-└── recent-focus.md
-```
-
-### 12.2 frontmatter
-
-```yaml
----
-id: engineering-style
-type: context_pack
-title: 工程风格
-visibility: private
-updated: 2026-08-17
-startup: true
-priority: high
----
-```
-
-### 12.3 正文建议
-
-```md
-# 工程风格
-
-## Rules
-
-### 最简实现优先
-
-- Why: 用户明确反感过度抽象。
-- Apply when: 架构设计、MCP 工具集、部署脚本。
-
-### 传参优于隐式全局状态
-
-...
-```
-
-### 12.4 startup 合成规则
-
-`context.startup` 由以下内容摘要合成：
-
-```text
-profile: 身份、语言、公开信息
-engineering-style: 工作方式
-security-boundaries: 安全红线
-active-projects: 当前活跃项目
-recent-focus: 最近重点
-```
-
-约束：
-
-```text
-1. startup 不直接落盘为事实源。
-2. startup 可缓存为 index 派生产物。
-3. 修改 startup 等价于修改 context pack。
-4. startup 输出必须控制长度。
-```
-
----
-
-## 13. Skill Registry 设计
-
-### 13.1 事实源
-
-```text
-Workbase/skills/*.md
-```
-
-### 13.2 frontmatter
-
-```yaml
----
-id: markdown-lint
-kind: skill
-name: Markdown Lint
-summary: 检查 Markdown fence/frontmatter/异常长代码块
-visibility: public
-risk: low
-tags:
-  - markdown
-  - lint
-source:
-  type: github
-  url: https://example.com/markdown-lint-skill
-license: unknown
----
-```
-
-### 13.3 正文
-
-```md
-# Markdown Lint
-
-## Purpose
-
-## When to use
-
-## Inputs
-
-## Outputs
-
-## Safety
-
-## Source
-```
-
-### 13.4 list/get 差异
-
-```text
-skill.list = 能力索引，返回摘要、风险、来源、标签。
-skill.get = 完整 Skill 定义，返回 frontmatter + markdown 原文。
-```
-
-不提供：
-
-```text
-skill.get_install_guide
-```
-
-安装方式如有必要，写进 Skill 正文即可。
-
----
-
-## 14. MCP Registry 设计
-
-### 14.1 事实源
-
-```text
-Workbase/mcps/*.md
-```
-
-### 14.2 frontmatter
-
-```yaml
----
-id: playwright-mcp
-kind: mcp_server
-name: Playwright MCP
-summary: 浏览器自动化 MCP Server
-visibility: public
-risk: browser-control
-transport: stdio
-source:
-  type: github
-  url: https://example.com/playwright-mcp
-auth:
-  type: none
-scopes: []
----
-```
-
-私密 MCP 示例：
-
-```yaml
----
-id: jiangnan-workbase
-kind: mcp_server
-name: Jiangnan Workbase MCP
-summary: 私密个人 Agent 工作基座
-visibility: private
-risk: personal-knowledge-base
-transport: streamable-http
-endpoint: https://mcp.<domain>/mcp
-auth:
-  type: bearer
-scopes:
-  - read:context
-  - read:knowledge
-  - write:proposal
----
-```
-
-### 14.3 list/get 差异
-
-```text
-mcp.list = MCP 能力索引，返回摘要、transport、auth、risk、source。
-mcp.get = 完整 MCP 定义，返回 endpoint、auth、scopes、tools、正文。
-```
-
-不提供：
-
-```text
-mcp.get_connection_guide
-```
-
-Agent 自行适配。
+**`Workbase/` 在公开博客构建时排除**（`vite.config.ts`），但 MCP 索引**包含**——按 kind 隔离访问。
 
 ---
 
@@ -1270,42 +1161,19 @@ Agent 自行适配。
 
 ### 15.1 定位
 
-Proposal 是统一写入意图格式。
+Proposal = 统一写入意图格式。跨领域 envelope：`Intent + Target + Operation + Payload + Validation + Audit`。
 
-它不是某个具体领域的工具，而是跨领域 envelope：
+### 15.2 为什么需要
 
-```text
-Intent + Target + Operation + Payload + Validation + Audit
-```
+直接写入的风险：Agent 选错目标 / 污染结构 / 临时想法当长期决策 / 泄露敏感 / 与本地 Obsidian 冲突。Proposal 让写入变成：表达意图 → 展示 diff → 人工确认 → 落盘 → 审计。
 
-### 15.2 为什么需要 Proposal
-
-直接写入有风险：
-
-```text
-1. Agent 可能选错目标文件。
-2. 可能污染正式知识结构。
-3. 可能把临时想法写成长期决策。
-4. 可能泄露敏感信息。
-5. 可能和本地 Obsidian 编辑冲突。
-```
-
-Proposal 让写入变成：
-
-```text
-先表达意图
-再展示 diff / preview
-再人工确认
-再落盘
-再审计
-```
-
-### 15.3 Schema 草案
+### 15.3 Schema
 
 ```yaml
 id: prop_20260817_001
-kind: note_patch
+kind: note                      # 服务端从 target.type 抄，客户端不传
 status: pending
+base_commit: abc123             # 服务端写入：expected_base 对得上才用，否则当前 HEAD
 
 created:
   by: minimax-code
@@ -1317,10 +1185,6 @@ risk:
   reasons:
     - 修改长期项目上下文
   requires_approval: true
-
-base:
-  source: vault
-  commit: abc123
 
 target:
   type: note
@@ -1336,98 +1200,53 @@ payload:
   content: |
     ...
 
-validation:
-  checks:
-    - target_exists
-    - valid_markdown_fence
-    - no_secret_pattern
-    - visibility_allowed
+validation:                     # 服务端结果，不是请求字段
+  warnings: []                  # 敏感模式开启时的命中提示；默认关则为空
 ```
 
 ### 15.4 target.type
 
-v0.1 target types：
-
 ```text
-note
-context_pack
-project
-article
-skill
-mcp_server
+note             Vault 任意授权 md
+context_pack     Workbase/context/*.md
+project          项目/*.md
+article          文章/*.md
+skill            Workbase/skills/*.md
+mcp_server       Workbase/mcps/*.md
 ```
-
-| target.type | 用途 | 事实源 |
-|---|---|---|
-| `note` | 普通笔记 | Vault 任意授权 md |
-| `context_pack` | 上下文包 | `Workbase/context/*.md` |
-| `project` | 项目上下文 | `项目/*.md` |
-| `article` | 正式文章 | `文章/*.md` |
-| `skill` | Skill Registry | `Workbase/skills/*.md` |
-| `mcp_server` | MCP Registry | `Workbase/mcps/*.md` |
 
 ### 15.5 operation.type
 
-v0.1 操作类型：
-
 ```text
-create_file
-append
-append_section
-patch_section
-replace_frontmatter
-register_item
+create_file          新建文件（路径必须在 vault.root 下，且文件还不存在）
+append               文件末尾追加（文件必须已存在）
+append_section       追加到指定标题下（标题不存在 → 先建标题再追加）
+patch_section        替换指定标题内容（标题不存在 → conflict）
+register_item        新增 registry item（skill / mcp，同 create_file）
 ```
 
-| operation.type | 用途 |
-|---|---|
-| `create_file` | 新建文章 / 新建 note |
-| `append` | 文件末尾追加 |
-| `append_section` | 追加到某个标题下 |
-| `patch_section` | 替换某个标题内容 |
-| `replace_frontmatter` | 修改 frontmatter |
-| `register_item` | 新增 skill / mcp registry item |
-
-暂不引入 JSON Patch / AST Patch。
+不引入 JSON Patch / AST Patch。不引入 `replace_frontmatter`（枚举里没有就不收）。
 
 ### 15.6 Adapter 模型
 
-对外只有统一 proposal。
+对外只有统一 proposal。内部按 target type 分发：NoteAdapter / ContextPackAdapter / ProjectAdapter / ArticleAdapter / SkillAdapter / MCPServerAdapter。
 
-内部按 target type 分发：
+Adapter 负责：校验 target、校验 operation、生成 preview / diff、Markdown fence 检查、visibility 检查、apply 落盘。敏感 regex 默认关；开了只记 warning。
 
-```text
-ProposalService
-  ├── NoteAdapter
-  ├── ContextPackAdapter
-  ├── ProjectAdapter
-  ├── ArticleAdapter
-  ├── SkillAdapter
-  └── MCPServerAdapter
-```
+### 15.7 受理矩阵
 
-Adapter 负责：
+枚举 = 矩阵。yaml 里的 `proposal_operation_types` 就是当前能发的，不再搞「合法但不能用」。
 
-```text
-1. 校验 target 是否允许。
-2. 校验 operation 是否支持。
-3. 生成 preview / diff。
-4. 检查敏感信息。
-5. 检查 Markdown fence。
-6. 检查 visibility。
-7. 后续 apply 时负责落盘。
-```
-
-### 15.7 v0.1 支持矩阵
-
-| target.type | operation | v0.1 行为 |
+| target.type | operation | apply 方式 |
 |---|---|---|
-| `note` | `append/append_section` | 生成 proposal，不自动 apply |
-| `context_pack` | `append_section/patch_section` | 生成 proposal |
-| `project` | `patch_section/append_section` | 生成 proposal |
-| `article` | `create_file` | 生成 proposal |
-| `skill` | `register_item` | 生成 proposal |
-| `mcp_server` | `register_item` | 生成 proposal |
+| `note` | `append` / `append_section` | 先施加再 3-way |
+| `context_pack` | `append_section` / `patch_section` | 先施加再 3-way |
+| `project` | `patch_section` / `append_section` | 先施加再 3-way |
+| `article` | `create_file` | 新文件：落盘前再看一眼路径；已存在 → conflict；不存在 → 直接落盘 |
+| `skill` | `register_item` | 同 `create_file` |
+| `mcp_server` | `register_item` | 同 `create_file` |
+
+`create_file` / `register_item` 没有 ancestor，不走 3-way。并发两个 approved 同路径：第二个落盘前再 stat 一次，已存在 → conflict，禁止互相覆盖。
 
 ---
 
@@ -1435,42 +1254,23 @@ Adapter 负责：
 
 ### 16.1 定位
 
-Inbox 是独立待办（todo）区，不是知识写入、不是 Proposal 中间态、不进入 Obsidian Vault。
-
-它只负责：
-
-```text
-记录一条「要处理的事」，并跟踪它的状态。
-```
+Inbox = 独立待办（todo），**不是**知识写入、**不是** Proposal 中间态、**不**进入 Obsidian Vault。只负责记录"要处理的事"并跟踪状态。
 
 不做审批、不做 apply、不做 git commit、不转 proposal、不与 Obsidian 联动。
 
-### 16.2 适合内容
+### 16.2 适合 / 不适合
 
-```text
-对话中产生的跟进事项
-临时想法（待办化）
-排查中的问题
-想做但未排期的任务
-```
+适合：对话中产生的跟进事项、临时想法（待办化）、排查中的问题、想做但未排期的任务。
 
-### 16.3 不适合内容
+不适合：正式文章正文、长期项目决策、安全策略正式条目、Skill/MCP 正式 registry item、部署配置、凭据/token/私钥。
 
-```text
-正式文章正文
-长期项目决策
-安全策略正式条目
-Skill/MCP 正式 registry item
-部署配置
-凭据/token/私钥
-```
+以上"不适合"若要进入正式知识库，应走 Proposal（§15），而不是塞进 inbox。
 
-> 以上「不适合内容」若要进入正式知识库，应走 Proposal（§15），而不是塞进 inbox。
-
-### 16.4 状态机
+### 16.3 状态机
 
 ```text
 pending → reviewing → done | abandoned
+pending → done | abandoned              # 看板拖拽一步到位，跳过 reviewing
 ```
 
 | 状态 | 含义 |
@@ -1480,171 +1280,176 @@ pending → reviewing → done | abandoned
 | `done` | 已完成（审核通过） |
 | `abandoned` | 已废弃（不再需要处理） |
 
-### 16.5 生命周期
+### 16.4 生命周期
 
-```text
-done / abandoned 保留 7 天后自动删除。
-pending / reviewing 保留到状态改变为止，不设自动删除。
+`done` / `abandoned` 保留 `retention_days` 天后自动删除。`pending` / `reviewing` 保留到状态改变为止，不设自动删除。
+
+`retention_days` 可配：
+
+```yaml
+# config.yaml
+inbox:
+  retention_days: 7           # 默认 7
 ```
 
-### 16.6 操作能力
+逻辑 = 标准 fallback：cfg 有值用 cfg，没值用 const。
 
-Agent 与 WebUI 对 inbox 的操作：
+### 16.5 操作
 
 ```text
-1. 创建（Agent: inbox.append / WebUI: 新建）
-2. 编辑内容
-3. 调整状态（pending → reviewing → done / abandoned）
+inbox.append   新建 pending。敏感命中 → 响应 warnings，照样创建。warnings 不落盘
+inbox.update   编辑内容或改变状态。同上
+inbox.list     列出摘要。不返回 warnings
+inbox.get      读取单条。每次读 rescan content 填 warnings
 ```
 
-工具：
+### 16.6 与 Proposal 的关系
+
+两者定位不同，完全独立：
 
 ```text
-inbox.append   新建 pending 待办
-inbox.update   编辑内容或改变状态
-inbox.list     列出摘要
-inbox.get      读取单条
-```
-
-不做审批、不做 apply、不做 commit、不转 proposal。
-
-### 16.7 与 Proposal 的关系
-
-两者定位不同，完全独立，不要混用：
-
-```text
-proposal = 正式知识写入请求（有明确 target + operation，走审批 → apply → commit）
+proposal = 正式知识写入请求（target + operation，审批 → 3-way apply → commit）
 inbox    = 独立待办（无 target，无审批，无 apply，无 commit）
 ```
 
-inbox 不能「转 proposal」：如果 Agent 后续需要正式写入，应**独立创建一条新 proposal**，两者不自动关联。
+inbox 不能"转 proposal"：如果后续需要正式写入，应独立创建新 proposal，两者不自动关联。
 
-proposal 走 webUI 审批流转：
+proposal 流转：
 
 ```text
 Agent 写入
   ↓
-proposal.create（有 target + operation）
+proposal.create（target + operation，可选 expected_base）
   ↓
 /home/studio/workbase/proposals/
   ↓
 用户 webUI 审批（同意 / 编辑后同意 / 拒绝）
   ↓
-同意 → apply → git commit → rebuild + reindex
-拒绝 → 标记作废
+同意 → 施加 operation 得完整 ours → 3-way → git commit（成功 = applied）
+      → reindex + rebuild（副作用，失败仍 applied）
+拒绝 → rejected
+冲突 → conflict（仅 approved 之后），proposal 保留，救回默认换新 base
 ```
 
-inbox 不走审批，只做状态流转：
+inbox 流转：
 
 ```text
 Agent / WebUI
   ↓
-inbox.append（新建 pending）
+inbox.append（新建 pending，id = inbox_YYYYMMDD_HHMMSS_fff）
   ↓
-/home/studio/workbase/inbox/2026-08-18T10-32-38.md
+/home/studio/workbase/inbox/{id}.md     # 文件名与 id 同一套
   ↓
-inbox.update（pending → reviewing → done / abandoned）
+inbox.update
+  pending → reviewing → done | abandoned
+  pending → done | abandoned              # 看板拖拽一步到位，§16.3 已有
   ↓
-7 天后自动删除（done / abandoned）
+retention_days 后自动删除（done / abandoned）
 ```
 
-示例（inbox 条目）：
-
-```yaml
-kind: inbox_todo
-id: inbox_20260818_001
-status: pending
-
-created:
-  by: minimax-code
-  at: 2026-08-18T10:32:38+08:00
-
-payload:
-  format: markdown
-  content: |
-    ## 待办：排查博客搜索高亮样式
-    ...
-```
-
-### 16.8 inbox 只存 VPS
+### 16.7 inbox 只存 VPS
 
 inbox 只落 VPS 私有区 `/home/studio/workbase/inbox/`，不进入本地 Obsidian Vault，不触发 apply / git commit / rebuild。
 
 ---
 
-## 17. Git-backed 写入路线
+## 17. Git-backed 写入
 
 ### 17.1 观点
 
-公网 MCP 可以写入正式 Vault，但写入必须是：
+公网 MCP 可以写入正式 Vault，但写入必须是：Git-backed / base-commit aware / diff-first / approval-first（webUI）/ conflict-stop / audited。
+
+Inbox 是独立待办，不在此列。
+
+### 17.2 写入能力
+
+当前全部具备，不是分期：
 
 ```text
-Git-backed
-base-commit aware
-diff-first
-approval-first（webUI）
-conflict-stop
-audited
+proposal（pending，不落正式正文）
+webUI 审批 apply（Git-backed commit）
+expected_base 校验 + diff preview + 完整 ours 后再 3-way + 冲突停止
 ```
-
-写入不是由 Agent 直接触发，而是 Agent 提交 proposal 后，用户在 webUI 审批通过，MCP 才执行 apply 并 commit。inbox 是独立待办，不在此列——它不触发 apply / commit（见 §16）。
-
-### 17.2 写入等级
-
-| Level | 能力 | 阶段 |
-|---|---|---|
-| L0 | proposal（pending，不落正式正文） | v0.1 |
-| L1 | webUI 审批 apply（Git-backed commit） | v0.1 |
-| L2 | base_commit 校验 + diff preview + 冲突停止 | v0.1 |
-| L3 | 低风险自动 append（免审批） | v0.2+ |
-
-v0.1 已包含 L0+L1+L2：proposal 创建后，webUI 审批通过即 apply + commit；apply 前校验 base_commit，冲突则停止。inbox 是独立待办，不属于任何写入等级（见 §16）。
 
 ### 17.3 apply 流程（webUI 审批后）
 
+`git merge-file` 要的是三份**完整文件**。payload 经常是半句话，不能当 `ours`。正确模型是两步：
+
 ```text
-1. Agent 创建 proposal，包含 base_commit（或由服务端补记）。
-2. 服务端生成 diff/preview，标记 pending。
+1. Agent 创建 proposal（可选 expected_base，见 §9.12）。
+2. 服务端生成 diff / preview，标记 pending。
 3. 用户在 webUI 查看，可编辑表述。
-4. 用户同意：
-   a. 服务端检查当前 HEAD 是否等于 base_commit。
-   b. 若 stale，返回 stale_base，要求重读。
-   c. 若一致，apply 到 workbench。
-   d. git commit 到 vault.git。
-   e. rebuild + reindex。
-5. 用户拒绝：标记作废，不 apply。
-6. 冲突：停止，保留 conflict proposal。
+4. 用户同意 → 进入 approved，然后：
+
+   A. 构造完整 ours（这一步必须先做）
+      - 已有文件：在 base_commit 的目标文件上，把 operation 施加一遍
+        → 得到完整文件 ours
+      - create_file / register_item：
+        落盘前再 stat 一次路径（防两个 approved 并发都看见「不存在」）
+        已存在 → conflict，停止
+        不存在 → 直接落盘，不走 merge，跳到 C
+      - append_section 目标标题不存在 → 先建标题再追加
+      - patch_section 目标标题不存在 → conflict
+
+   B. 3-way（仅已有文件）
+      - HEAD = base_commit → ours 直接落盘，不走 merge
+      - HEAD ≠ base_commit：
+        base  = 文件 @ base_commit
+        other = 文件 @ HEAD
+        ours  = A 得到的完整文件
+        无冲突 → 用 merge 结果
+        文本冲突或 frontmatter 内部冲突 → conflict，停止
+        merge 工具失败 → conflict，停止
+
+   C. 落盘 + git commit
+      失败 → 状态 conflict（文件未进 HEAD，可重试）
+      成功 → 状态 applied（见下，rebuild 失败不再改这个状态）
+
+   D. reindex + rebuild（副作用，不参与状态机）
+      失败 → 仍然 applied；单独重跑，禁止再 apply
+
+5. 用户拒绝：标记 rejected。
+6. conflict 救回：编辑 payload 后重新 approved。
+   默认重读当前 HEAD 作为新 base_commit。
 ```
 
 ### 17.4 冲突策略
 
 | 情况 | 策略 |
 |---|---|
-| base commit 不是最新 | 返回 `stale_base`，要求重读 |
-| patch 无法应用 | 返回 `patch_failed` |
-| Git merge conflict | 停止，不自动合并 |
-| 写入 secret 文件 | 拒绝 |
-| public 文件含敏感模式 | 拒绝或要求高风险确认 |
+| 目标文件在 base_commit 后无修改 | 完整 ours 直接落盘 |
+| 目标文件有修改但无冲突 | 3-way（完整 ours vs HEAD）后 apply |
+| 3-way 文本冲突 | conflict，保留 proposal |
+| 3-way frontmatter 内部冲突 | conflict（结构化字段不自动合并） |
+| create_file / register_item 且路径已存在（含落盘前再 stat） | conflict，禁止互相覆盖 |
+| create_file / register_item 且路径不存在 | 直接落盘，不走 merge |
+| append_section 目标标题不存在 | 先建标题再追加 |
+| patch_section 目标标题不存在 | conflict |
+| 写入 `visibility=secret` 文件 | 拒绝（控制层，不写 receipt）。跟敏感 regex 无关 |
+| 命中 `sensitive_patterns` | 默认关。开了也只在 validation 记 warning，不拒 |
 
 ### 17.5 禁止策略
 
 ```text
-不自动解决语义冲突。
-不自动覆盖本地 Obsidian 更新。
-不把服务器 workbench 变成无约束第二主写入源。
+不自动解决语义冲突
+不自动覆盖本地 Obsidian 更新
+不把服务器 workbench 变成无约束第二主写入源
+不自动合并 frontmatter 字段（即使语义上能合并）
 ```
 
-### 17.6 Receipt 结果与幂等
-
-每次 apply 产生一个 receipt，记录 apply 的真实结果。状态机：
+### 17.6 Receipt
 
 ```text
-pending → approved → applied    （同意 + commit 成功 + 内容 hash 校验通过）
-        ↘ rejected              （拒绝，作废）
-        ↘ conflict              （stale_base / patch_failed / merge conflict，停止不改动）
+pending → approved → applied    (终态)
+        ↘ rejected              (终态)
+approved → conflict → approved  (可救回；默认换新 base)
 ```
 
-`applied` 的严格定义：**git commit 成功 + 目标文件 apply 后内容 SHA-256 与预期一致**。用户在 webUI 点了「同意」只是 `approved`，不代表 `applied`。
+没有 `pending → conflict`。创建校验失败是控制层拒绝，不写 receipt。
+
+`applied` 严格定义：完整 ours 构造成功 +（如需）3-way 成功 + git commit 成功 + 目标文件 SHA-256 校验通过。**不含** reindex / rebuild。用户点「同意」只是 `approved`。
+
+`conflict` 是**暂停态**。救回时默认重读当前 HEAD 当新 `base_commit`（旧 base 大概率过时）。也可以明确「只改 payload、不换 base」——再冲突就再停。
 
 ```yaml
 receipt:
@@ -1653,23 +1458,23 @@ receipt:
   applied_at: 2026-08-17T17:05:00+08:00
   commit: def456              # 仅 applied：apply 后的 git commit
   content_sha256: "..."       # 目标文件 apply 后内容哈希
+  base_commit: abc123         # 原始 base_commit
+  merge_strategy: none | three_way    # 应用策略
   replayed: false             # 幂等标记
 ```
 
 关键语义：
 
-```text
-1. applied 需要 commit 成功 + hash 校验，二者缺一不可。
-2. conflict 不改动任何文件，保留原 proposal 供重读。
-3. 幂等：同一 proposal 重复 apply → 返回原 receipt，replayed=true，不重复提交。
-4. 校验失败（input_invalid，如 secret 命中 / fence 不闭合）是控制结果，不是 receipt。
-```
+1. applied = 完整 ours +（如需）3-way + git commit + hash 校验。reindex / rebuild 不算进状态
+2. conflict 不改动任何文件，保留原 proposal 供重读
+3. 幂等：同一 proposal 已 applied 再点同意 → 返回原 receipt，replayed=true。禁止再 commit
+4. 校验失败（secret 命中 / fence 不闭合 / 矩阵外 operation）是控制层拒绝，不是 receipt
 
 ---
 
 ## 18. 同步模型
 
-### 18.1 当前主链路（正向）
+### 18.1 正向
 
 ```text
 本地 Obsidian Vault
@@ -1691,27 +1496,28 @@ VPS workbench = vault.git 的 working tree（无独立 .git，用 GIT_DIR + GIT_
 公网 MCP = read + proposal + inbox（proposal 走审批，inbox 是独立待办）
 ```
 
-### 18.3 reindex 触发（决策已确认）
+### 18.3 reindex 触发
 
-采用 post-receive 主动触发：
+post-receive hook 末尾主动触发：git checkout 到 workbench → 触发博客 build → 触发 MCP reindex。
+
+reindex 只绑一处：同进程 `POST /internal/reindex`，和 MCP 协议 mux 分路，**不要**让 mcp-go 把这条 POST 吃成协议错误。
+
+保护不靠 `RemoteAddr == 127.0.0.1`（反代会改掉对端地址）：
 
 ```text
-post-receive hook 末尾：
-1. git checkout 到 workbench
-2. 触发博客 build
-3. 触发 MCP reindex（curl 127.0.0.1:8787/internal/reindex 或 systemctl reload）
+1. Caddy 公开反代排除 /internal*     ← 公网打不到
+2. 进程 bind 127.0.0.1:8787          ← 公网网卡听不到
+3. hook / apply 用本机 127.0.0.1 直打，不带 Bearer
 ```
 
-不再用 server 轮询 commit hash。
+webUI 走同一条内部 HTTP。不要再写 8788，也不要给 Token 勾选 `admin:reindex`。
 
 ### 18.4 反向同步（MCP 审批 apply 后回流）
-
-审批通过后，MCP 在 VPS 上修改 workbench 文件。为避免下次本地 push 覆盖这些修改，apply 必须同步提交到 vault.git：
 
 ```text
 用户 webUI 审批通过
   ↓
-MCP 修改 /home/studio/workbench/<target>
+MCP 修改 /home/studio/workbench/<target>（含可能的 3-way merge 结果）
   ↓
 git --git-dir=/home/studio/vault.git \
     --work-tree=/home/studio/workbench \
@@ -1724,15 +1530,36 @@ vault.git HEAD 前进
 rebuild + reindex
 ```
 
-注意：proposal apply 的修改体系与正常文件修改不同——
+注意：apply 是直接改 bare repo 的 working tree，绕过 post-receive hook（hook 只在 push 时触发），所以 apply 后的 rebuild + reindex 必须**手动补触发**，不能指望 post-receive 自动完成。
 
-| | 正常文件修改 | proposal apply |
+**手动补触发的具体命令**（副作用失败时用，proposal 已经是 `applied`）：
+
+```bash
+# 1. MCP reindex：只绑 8787 loopback，无 Bearer
+curl -X POST http://127.0.0.1:8787/internal/reindex
+
+# 2. 博客 rebuild
+/home/studio/workbase/bin/rebuild-blog.sh
+```
+
+**实施位置**：`server/mcp/internal/apply/apply.go` 拆成两段，不要挤进一个状态：
+
+```text
+commitAndMarkApplied():
+  1. 落盘 + git commit + SHA-256 校验
+  2. 失败 → conflict（文件未进 HEAD，可重试）
+  3. 成功 → 状态 applied，写 receipt
+
+runSideEffects():
+  4. POST http://127.0.0.1:8787/internal/reindex   # 用 cfg.Server.Listen，不是 AdminListen
+  5. exec cfg.Workbase.RebuildCmd
+  6. 失败 → 仍然 applied；记日志；用户手动重跑上面两条。禁止再 apply
+```
+
+| 阶段 | 失败 | 状态 |
 |---|---|---|
-| 触发源 | 本地 Obsidian 编辑 → sync.ps1 push | webUI 审批通过 |
-| 写路径 | push → post-receive hook | MCP 直接改 workbench → 手动 git commit |
-| build/reindex | post-receive 自动触发 | apply 后手动补触发 |
-
-apply 是直接改 bare repo 的 working tree，绕过了 post-receive hook（hook 只在 push 时触发），所以 apply 后的 rebuild + reindex 必须**手动补触发**（curl `127.0.0.1:8787/internal/reindex` 或 `systemctl reload`），不能指望 post-receive 自动完成。
+| 落盘 + `git commit` | 失败 | `conflict`（文件未进 HEAD，可重试） |
+| commit 已成功，reindex / rebuild 失败 | 失败 | **已经 `applied`**，副作用单独重跑，禁止再 apply |
 
 ### 18.5 本地 sync.ps1 调整
 
@@ -1743,13 +1570,13 @@ git pull --rebase
 git push
 ```
 
-这样 MCP 在 VPS 上的 commit 会先合并回本地，再推送本地新改动。冲突由 git 正常处理。
+MCP 在 VPS 上的 commit 会先合并回本地，再推送本地新改动。冲突由 git 正常处理。
 
 ### 18.6 冲突处理
 
 | 情况 | 策略 |
 |---|---|
-| MCP apply 基于旧 base | apply 前检查 base_commit，stale 则拒绝 |
+| MCP apply 基于旧 base | 3-way merge（无冲突 apply / 有冲突 conflict） |
 | 本地与 VPS 分叉 | git pull --rebase 正常合并 |
 | 合并冲突 | git 保留冲突标记，用户手动解决 |
 | MCP 不直接覆盖本地未同步内容 | 依赖 git 冲突机制兜底 |
@@ -1760,130 +1587,127 @@ git push
 
 ### 19.1 不使用向量数据库
 
-v0.x 不引入向量数据库。
+v0.1-v1.0 不引入向量数据库。Markdown + frontmatter + WikiLink 结构已经很强；当前更需要项目状态、决策、下一步，而不是相似段落召回；向量库增加部署调试复杂度；个人知识库错误召回风险较高。
 
-原因：
+### 19.2 SQLite
 
-```text
-1. Markdown + frontmatter + WikiLink 结构已经很强。
-2. 当前更需要项目状态、决策、下一步，而不是相似段落召回。
-3. 向量库增加部署和调试复杂度。
-4. 个人知识库错误召回风险较高。
-```
-
-### 19.2 推荐 SQLite FTS
-
-索引可使用：
+三套库，不是一张表。Token 不进 `notes`。表结构以 `SCHEMA.md §23` 为准。
 
 ```text
-SQLite + FTS5
+{runtime}/index/notes.sqlite
+  notes / notes_fts / links / backlinks     vault 镜像；kind 字段隔离类型
+{runtime}/auth.sqlite
+  auth_tokens                               Agent Token；不进 Vault / Git
+{runtime}/audit/audit.sqlite
+  audit_log                                 审计；不进 Vault / Git
 ```
 
-数据表：
-
-```sql
-notes(id, path, title, type, visibility, updated_at, access_count, frontmatter_json, summary)
-notes_fts(id, title, headings, body, tags)
-links(source_id, target_id, link_type, raw)
-projects(id, note_id, status, current_focus)
-skills(id, note_id, risk, source_json)
-mcps(id, note_id, transport, endpoint_hint, auth_json)
-```
-
-v0.1 如果不想引入 SQLite，也可先 JSON index + 简单搜索，但建议 SQLite FTS，部署仍然轻量。
+`notes.kind` 取值：`note` / `context_pack` / `project` / `skill` / `mcp_server` / `article`。不开分表。这是当前完整设计。
 
 ### 19.3 Index 输出
 
+索引就是 SQLite，不开 JSON sidecar 当分表。调试 dump 可以临时写，不进契约、不进 Git。
+
 ```text
-/home/studio/workbase/index/
-├── notes.sqlite
-├── manifest.json
-├── graph.json
-├── context-startup.json
-├── skills.json
-└── mcps.json
+{runtime}/index/notes.sqlite
+{runtime}/auth.sqlite
+{runtime}/audit/audit.sqlite
 ```
 
-### 19.4 访问计数与热度
+### 19.4 访问计数与热度算法
 
-记录每个 note / project / skill / mcp 被 Agent 读取（`knowledge.get` / `project.get` / `skill.get` / `mcp.get`）的次数，作为热度信号：
+**艾宾浩斯遗忘曲线**：
 
-```sql
-notes(..., access_count INTEGER DEFAULT 0, last_access_at)
+```text
+score = access_count * exp(-elapsed_days / HALF_LIFE_DAYS)
 ```
 
-热度服务两个方向：
+- `HALF_LIFE_DAYS` 默认 7（来自 `config.yaml` 的 `index.access.half_life_days`）
+- `elapsed_days` = `now - last_access_at`
+- `Hot()` 排序按 score 降序
+- `score < min_score`（默认 `0.001`）不进榜；`score = 0`（完全未访问）不进榜
+- 事实源 = `config.yaml` 的 `index.access.min_score`
 
-1. **排序加权**：`knowledge.search` 的 `signals` 增加 `access` 信号——读取次数越高排序越靠前（§9.4）；skill/mcp 的 `list` 也可按热度排序。
-2. **冷数据清理**：长期零访问 + 低重要性的条目进入清理候选，由用户确认后删除。
+**配置**：
 
-v0.1 只做「计数 + 排序加权」；自动清理（GC）延后到 v0.2，且必须用户确认，不自动删除。
+```yaml
+# config.yaml
+index:
+  access:
+    half_life_days: 7         # 默认 7
+    min_score: 0.001           # 低于此值不参与 Hot 排序
+```
+
+`Hot()` **实时计算**（不预存），保证 `last_access_at` 变化立即反映。
+
+服务两个方向：
+
+1. **排序加权**：`knowledge.search` 的 `signals.access` 使用本算法
+2. **冷数据清理候选**：长期低 score 条目进入清理候选，由用户确认后删除。当前只做排序，不自动清理。
 
 ---
 
 ## 20. 安全设计
 
-### 20.1 禁止泄露
+### 20.1 未授权访问 vs 授权读全文
 
-绝不返回：
+挡未授权的是 **token + scope + visibility**，不是正则：
 
-```text
-真实私钥内容
-token
-密码
-.env 原文
-ssh private key
-secret visibility 内容
-未授权 private 内容
-```
+- 没 token / scope 不够 → 401 / 403
+- `visibility=secret` 默认不进 search / list / `context.startup`；get 默认 `secret_blocked`
+- `visibility=private` 只给有对应 scope 的 token
+- `visibility=draft` 进 `scope=all` search、各 list、`context.startup`；有对应 scope 就能 get。Vite 跳过
+
+授权 Agent 读 Skill / MCP / 文章拿**完整原文**（含 endpoint、配置说明、部署笔记）。不要把 `password: 用户自备`、`Go 1.25.0.1`、`8.8.8.8` 打成 `[REDACTED]`。
+
+真正的密钥不该写进 vault md。写了也原样返回给授权调用方——这是用户自己的选择。
+
+日志 / audit 仍不写 token 原文、不写 token hash（审计字段约束，跟敏感开关无关）。
 
 ### 20.2 敏感模式检测
 
-写入 proposal / inbox / public 内容前检查：
+**默认关。** `schema.sensitive_patterns: []` = 写入不检测、读出不打码。个人工作台默认开会误伤部署笔记和 Skill/MCP 配置。
 
-```text
-Authorization: Bearer
-api_key
-secret
-token
------BEGIN .* PRIVATE KEY-----
-Windows 用户私钥路径
-公网 IP 模式（按策略）
-.env 风格赋值
-```
+可配：往 yaml 列表加 regex 才开启。开启后也**只警告、不拒绝、读出不打码**。详见 `SCHEMA.md §21`。
 
 ### 20.3 Audit
 
-审计记录：
+**最小字段集**（每条 audit 记录必含）：
 
-```json
-{
-  "time": "2026-08-17T17:00:00+08:00",
-  "client_id": "minimax-code",
-  "tool": "knowledge.get",
-  "resource_id": "note_xxx",
-  "scope": "read:knowledge",
-  "result": "success",
-  "content_bytes": 1200
-}
-```
+| 字段 | 类型 | 必含 | 说明 |
+|---|---|---|---|
+| `ts` | RFC3339 | yes | 工具调用时间 |
+| `tool` | string | yes | 工具名 |
+| `client_id` | string | yes | Agent 标识（来自 SQLite `auth_tokens.name`，**不是** token 本身） |
+| `scopes` | []string | yes | 实际授予的 scope 列表 |
+| `args_digest` | string | yes | 参数的 SHA-256（不存原文） |
+| `result_status` | enum | yes | `success` / `error` / `unauthorized` / `forbidden` |
+| `duration_ms` | int | yes | 执行时长 |
+| `error` | string | no | 错误信息（不含敏感数据） |
+| `target_path` | string | no | apply/proposal 类的目标文件 |
+| `commit` | string | no | apply 类的 git commit hash |
+| `base_commit` | string | no | apply 类的 base_commit |
 
-不记录：
+详细 schema 在 `SCHEMA.md §20`。`audit.list_recent` 一次返回最近 N 条，默认 100。
 
-```text
-token
-完整私密正文
-secret 内容
-```
+**client_id 获取流程**（请求时）：
+
+1. HTTP middleware 从 `Authorization: Bearer <token>` 解析 token
+2. `tokenCache.lookup(SHA-256(token))`——**只读内存 cache**，不每请求查 SQLite
+3. 命中行的 `name` 字段 → 注入请求 context 的 `client_id`
+4. tool handler 从 ctx 取 `client_id`，写入 audit
+5. 整条链路**不存** token 原文 / token hash 到 audit
+
+`tokenCache` 由签发 / 轮换同步 upsert、撤销同步删。每 5s reload 只给崩溃恢复。实施位置：`server/mcp/internal/auth/middleware.go` 的 `Authenticate()` 返回 `AuthContext{ClientID, Scopes}`。
 
 ### 20.4 日志脱敏
 
 所有日志中：
 
 ```text
-Authorization header -> [REDACTED]
-token -> [REDACTED]
-private key -> [REDACTED]
+Authorization header → [REDACTED]
+token                → [REDACTED]
+private key          → [REDACTED]
 ```
 
 ---
@@ -1900,25 +1724,40 @@ config: /home/studio/workbase/config.yaml
 
 ### 21.2 Caddy
 
+公开反代 **必须排除** `/internal*`。整站 `reverse_proxy 8787` 会把 reindex 暴露到公网，而且对端地址变成 Caddy，`RemoteAddr == 127.0.0.1` 判断失效。
+
 ```text
 mcp.<domain> {
+    handle /internal* {
+        respond 404
+    }
     reverse_proxy 127.0.0.1:8787
+}
+
+workbase.<domain> {
+    reverse_proxy 127.0.0.1:8788
 }
 ```
 
-备案/HTTPS 完成前不强推正式公网 endpoint。
+8787 同进程 mux：
+
+```text
+POST /internal/reindex  → 内部 handler（hook / apply 副作用 / webUI）
+其余                    → mcp-go Streamable HTTP
+```
+
+不要让 mcp-go 把 `/internal/reindex` 吃成协议错误。
 
 ### 21.3 端口
 
 ```text
-127.0.0.1:8787
+127.0.0.1:8787   MCP HTTP
+127.0.0.1:8788   Admin HTTP。进程 bind loopback；公开入口靠 Caddy。不要用 RemoteAddr 判断来源（反代会改掉对端地址）。
 ```
-
-公网只经 Caddy 暴露。
 
 ### 21.4 配置
 
-`config.yaml` 不进 Git：
+真实 `config.yaml` **不进 Git**（含 admin `pass_hash` / 路径 / 灰度配置）。**Token 全部在 SQLite `auth_tokens` 表**，不在 yaml 里。**`server/mcp/config.example.yaml` 入库作为模板**（仅含字段结构 + `REPLACE_WITH_*` 占位符，部署时按需替换）。完整配置 schema 在 `SCHEMA.md §1`：
 
 ```yaml
 server:
@@ -1929,63 +1768,303 @@ vault:
   git_dir: /home/studio/vault.git
 
 workbase:
-  root: /home/studio/workbase
-  index: /home/studio/workbase/index
-  proposals: /home/studio/workbase/proposals
-  inbox: /home/studio/workbase/inbox
+  root: /home/studio/workbench/Workbase    # Vault 内 Registry 源（事实源）
+  runtime: /home/studio/workbase           # 进程运行时私有区
 
 admin:
   listen: 127.0.0.1:8788
-  auth:
-    user: admin
-    pass_hash: ...
+  session_ttl: 3600          # session 过期秒
+  login_rate_limit: 5        # 每分钟最多失败次数
 
+# Token 灰度（撤销 / 轮换时旧 token 的宽限期），唯一保留的 auth 字段
+# Token 主体 = SQLite auth_tokens 表（§6.4），不在 yaml
 auth:
-  clients: []
+  grace_period_hours: 0       # 0 = 无灰度。轮换同步改/删旧 cache；撤销 SLA ≤5s。N = 灰度 N 小时
+
+# 单账号 admin 凭证（个人工作台只一个）
+admin_auth:
+  user: REPLACE_WITH_ADMIN_USER
+  pass_hash: REPLACE_WITH_SHA256_HEX_ADMIN    # SHA-256(password)，不含 sha256: 前缀
+
+inbox:
+  retention_days: 7          # done/abandoned 保留天数
+
+index:
+  access:
+    half_life_days: 7        # 艾宾浩斯半衰期
+    min_score: 0.001
+
+knowledge:
+  search:
+    weights:                 # 留空 = 用代码内 const 默认值
+      title: 5.0
+      tags: 4.0
+      frontmatter: 3.0
+      section: 2.0
+      fulltext: 1.5
+      wikilink_backref: 2.0
+      access: 1.0
+      recency: 0.5
 ```
 
-### 21.5 WebUI 后台（proposal 审批 + inbox 待办）
+`schema` 块（visibility / 状态机 / 敏感模式 / 枚举）不在这里再抄一遍。权威副本 = `SCHEMA.md §1` 与 `server/mcp/config.example.yaml`。`sensitive_patterns` 默认 `[]`。
 
-proposal 与 inbox 的阅读统一走一个私密 webUI，但两者操作不同。
+### 21.5 WebUI 后台
 
-proposal 职责（审批流转）：
+**技术栈**：React + Vite + Tailwind + TypeScript（与博客前端共享基础）。
 
 ```text
-1. 列出 pending proposal。
-2. 展示每条内容的 diff / preview。
-3. 支持「同意」「编辑后同意」「拒绝」。
-4. 同意 → MCP apply 修改 workbench → git commit → rebuild + reindex。
-5. 拒绝 → 标记作废。
+server/mcp/admin/
+├── src/
+│   ├── main.tsx
+│   ├── routes/
+│   │   ├── login.tsx
+│   │   ├── workspace/
+│   │   │   ├── inbox.tsx
+│   │   │   ├── proposals.tsx
+│   │   │   ├── proposal/$id.tsx        # 详情 + diff viewer
+│   │   │   ├── access.tsx              # 访问热度
+│   │   │   ├── audit.tsx               # 审计日志
+│   │   │   └── search.tsx              # 知识搜索（不走 MCP）
+│   │   └── settings/
+│   │       ├── token.tsx               # Token 管理
+│   │       ├── system.tsx              # System 健康
+│   │       ├── git.tsx                 # Git 变更
+│   │       └── templates.tsx           # 模板
+│   ├── components/
+│   │   ├── kanban.tsx
+│   │   ├── proposal-card.tsx
+│   │   ├── diff-viewer.tsx             # 红绿对比
+│   │   ├── heatmap.tsx
+│   │   ├── token-list.tsx
+│   │   ├── search-bar.tsx
+│   │   └── result-card.tsx
+│   ├── lib/
+│   │   ├── api.ts                      # 后端 HTTP 客户端
+│   │   └── auth.ts                     # session 管理
+│   └── styles/
+│       └── tokens.css                  # 与博客 src/styles.css 同源
+├── package.json
+├── vite.config.ts
+└── tsconfig.json
 ```
 
-inbox 职责（创建 + 编辑 + 状态调整，无审批）：
+**登录**：独立 session token（不用浏览器弹窗 Basic Auth）。
+
+- `POST /api/admin/login` → 颁发 session token（短期，1h）+ refresh token
+- 凭证 = `config.yaml` 的 `admin_auth.user` + `pass_hash`（SHA-256 原文比对，**无盐**。单账号个人台可接受，不是通用口令方案）
+- 失败限流：5 次/分钟（可配，`admin.login_rate_limit`）
+
+**视觉规范**：与博客共享 `tokens.css`，后台 = admin skin（明亮专业）。
+
+#### 21.5.1 路由分组（workspace / settings）
 
 ```text
-1. 列出 inbox 条目。
-2. 支持「新建」待办（等价 inbox.append，初始 pending）。
-3. 展示每条内容，支持「编辑内容」和「调整状态」（pending → reviewing → done / abandoned）。
-4. inbox 自身不触发 apply / commit，done/abandoned 保留 7 天后自动删除。
+/                     → 重定向到 /workspace/inbox（已登录）或 /login
+/login                → 登录页
+
+# workspace = 日常内容
+/workspace/inbox                  → 看板
+/workspace/proposal               → Proposal 列表
+/workspace/proposal/$id           → Proposal 详情 + diff viewer
+/workspace/access                 → 访问热度
+/workspace/audit                  → 审计日志
+/workspace/search                 → 知识搜索
+
+# settings = 系统管理
+/settings/token                   → Token 管理
+/settings/system                  → System 健康
+/settings/git                     → Git 变更
+/settings/templates               → 模板
 ```
 
-访问方式：
+#### 21.5.2 功能模块清单
+
+| 模块 | 路由 | 主要功能 | 关键交互 |
+|---|---|---|---|
+| 登录 | `/login` | 登录 / 限流 | 表单提交，错误提示 |
+| 看板 | `/workspace/inbox` | Inbox 四列拖拽 | 拖拽改状态，右键菜单 |
+| Proposal 列表 | `/workspace/proposal` | 列出所有 proposal | 状态过滤，时间排序 |
+| Proposal 详情 | `/workspace/proposal/$id` | **红绿 diff** + 编辑后同意/拒绝 | 实时 diff 重算 |
+| 访问热度 | `/workspace/access` | 艾宾浩斯热度榜 + 曲线 | 时间窗口切换 |
+| 审计日志 | `/workspace/audit` | 实时流 + 过滤 | client_id / tool / 时间 |
+| 知识搜索 | `/workspace/search` | webUI 直搜 vault | 0 结果兜底（§9.4） |
+| Token 管理 | `/settings/token` | 创建/列表/撤销/轮换 | 一次性明文展示（§6.4） |
+| System 健康 | `/settings/system` | 进程/端口/磁盘/SQLite | 实时刷新按钮 |
+| Git 变更 | `/settings/git` | workbench HEAD 历史 + diff | 选中 commit 看 diff |
+| 模板 | `/settings/templates` | proposal 模板 + scope 组合 | CRUD |
+
+#### 21.5.3 知识搜索 Workspace（具体展示形式）
+
+**路由**：`/workspace/search`
+
+后台直扫 `notes` 表，**不过** MCP `knowledge.search` 的 `kind` 门禁。管理员能跨 kind 搜（含 `article` / `project` / `skill` / `mcp` / `context`）。这和 Agent 默认 `["note","article"]` 不是同一套——写明，不要做成「后台也只能搜 note」。
+
+**完整 UI**：
 
 ```text
-https://workbase.<domain>/  （Caddy 反代到 127.0.0.1:8788）
+┌─────────────────────────────────────────────────────────────────┐
+│  [🔍 输入关键词________________________]  [搜索]  [清除]        │
+│                                                                  │
+│  过滤器:                                                         │
+│   kind:       [全部▾]  (note / article / project / skill / mcp / context) │
+│   visibility: [全部▾]  (public / private / secret / draft)               │
+│   tag:        [______________]                                  │
+│   排序:      [score▾]  (score / recency / access / hot)        │
+│                                                                  │
+├─────────────────────────────────────────────────────────────────┤
+│  结果: 12 条 (耗时 0.18s)                                          │
+│                                                                  │
+│  ┌────────────────────────────────────────────────────────┐    │
+│  │ 1. Agent Workbase MCP 设计                             │    │
+│  │    路径: Workbase/mcps/jiangnan-workbase.md            │    │
+│  │    可见性: private  热度: ●●●○○                        │    │
+│  │    命中信号: [title 5.0] [fulltext 1.5] [access 1.0]   │    │
+│  │    score: 7.5                                            │    │
+│  │    摘要: 私密个人 Agent 工作基座。提供上下文、知识...    │    │
+│  │    [展开]   [跳到 MCP 详情]                             │    │
+│  └────────────────────────────────────────────────────────┘    │
+│  ┌────────────────────────────────────────────────────────┐    │
+│  │ 2. knowledge.search 设计                                │    │
+│  │    ...                                                   │    │
+│  └────────────────────────────────────────────────────────┘    │
+│                                                                  │
+│  [加载更多...]                                                   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-认证：
+**[展开]** 后的左右对比视图（红绿 diff）：
 
 ```text
-独立 admin 账号 + 密码（不开放给 Agent）。
-与 MCP Bearer token 分离。
+┌──────────────────────────┬──────────────────────────┐
+│  原文命中片段（左）        │  你的 query（右）          │
+├──────────────────────────┼──────────────────────────┤
+│  ... 私密个人 [Agent] ... │  Agent Workbase ...      │  ← title 命中（红）
+│  ... 提供 [上下文] ...    │                          │
+│  ... 知识检索项目状态 ... │  knowledge search        │  ← fulltext 命中（黄）
+│  ...                      │                          │
+└──────────────────────────┴──────────────────────────┘
 ```
 
-v0.1 实现建议：
+**0 结果兜底视图**：
 
 ```text
-先做极简版：一个静态 HTML + 少量 JS，通过内网 HTTP API 操作。
-不集成到公开博客（博客是公开展示层，webUI 是私密审批层）。
+┌────────────────────────────────────────────────────────┐
+│  ⚠ 未查询到相关内容                                      │
+│  query: "Agent Workbase proposal"                      │
+│  执行信号: [title] [tags] [frontmatter] [section] [ft] │
+│                                                          │
+│  建议:                                                   │
+│   • 缩短关键词：去掉修饰词（'的'/'一个'/'关于'）          │
+│   • 改用更通用的词                                       │
+│   • 检查 scope 权限：你的 token scope 是否含 read:knowledge│
+│   • 检查 visibility：public 内容只能搜到 public 知识       │
+│                                                          │
+│  [返回首页]  [改用更通用的词: "MCP"]                      │
+└────────────────────────────────────────────────────────┘
 ```
+
+#### 21.5.4 Diff Viewer（红绿对比）
+
+**位置**：`/workspace/proposal/$id` 详情页的 diff 区
+
+**对比维度**（同 git diff 视觉）：
+
+```text
+┌──────────────┬──────────────────────────────────────────────┐
+│  原文         │  变更后                                       │
+│  （红=删）     │  （绿=增）                                    │
+├──────────────┼──────────────────────────────────────────────┤
+│  # 工程风格    │  # 工程风格                                   │
+│               │  +                                            │
+│               │  + ## 5. MCP 集成（新增）                     │
+│  ## 4. 其他   │  - ## 4. 其他                                 │
+│  ... 旧内容    │  ... 旧内容                                   │
+│               │  + ## 6. 后续规划（新增）                     │
+└──────────────┴──────────────────────────────────────────────┘
+```
+
+**实时重算**：用户编辑 proposal 内容后 → 立即重算 diff → 更新视图（不刷新整页）。
+
+**禁止**：Diff Viewer 不集成到公开博客（博客 = 公开展示层，webUI = 私密审批层）。
+
+### 21.6 可扩展性原则
+
+**目标**：后续加新功能 = 加新 route + 加新 API 端点 + 加新后端 module，**不动现有**。
+
+#### 21.6.1 路由命名
+
+```text
+{group}/{resource}        路由
+{group}    ∈ workspace | settings | future
+{resource} ∈ inbox | proposal | access | audit | search | token | system | git | templates | future
+```
+
+具体见 §21.5.1 路由表。
+
+#### 21.6.2 API 端点命名
+
+```text
+/api/{resource}/{action}              RESTful
+/api/{resource}/$id/{action}          针对单条
+```
+
+**资源列表**（v0.1）：
+
+| 资源 | 端点 |
+|---|---|
+| `auth_tokens` | `POST /api/auth_tokens` / `GET /api/auth_tokens` / `POST /api/auth_tokens/$id/revoke` / `POST /api/auth_tokens/$id/rotate` |
+| `inbox` | `POST /api/inbox` / `GET /api/inbox` / `POST /api/inbox/$id`（更新）/ `DELETE /api/inbox/$id` |
+| `proposals` | `GET /api/proposals` / `GET /api/proposals/$id` / `POST /api/proposals/$id/approve` / `POST /api/proposals/$id/reject` / `POST /api/proposals/$id/edit` |
+| `audit` | `GET /api/audit/recent?limit=&since=&tool=&client_id=` |
+| `system` | `GET /api/system/health` |
+| `git` | `GET /api/git/history?limit=` / `GET /api/git/diff/$commit` |
+| `knowledge` | `GET /api/knowledge/search?q=&kind=&visibility=&limit=` / `GET /api/knowledge?id=`。`id` 走 query，因为 `notes.id` 是路径（含 `/`），不能塞进 URL path。kind 含 `article`。后台直扫 notes 表，不过 MCP kind 门禁 |
+| `templates` | `GET /api/templates` / `POST /api/templates` / `POST /api/templates/$id` |
+
+#### 21.6.3 后端 module 划分
+
+```text
+server/mcp/internal/
+├── auth/                # 鉴权（Bearer + Admin session）
+├── audit/               # 审计日志
+├── vault/               # vault 读取 / frontmatter
+├── index/               # 索引构建 + 访问热度
+├── search/              # FTS5 搜索
+├── tools/               # MCP tool handlers（含 workbase.identity）
+├── proposal/            # proposal schema / 落盘 / preview
+├── inbox/               # inbox 待办
+├── apply/               # 3-way merge + git commit
+├── sanitize/            # 敏感检测
+├── manifest/            # workbase.identity 从 vault 读
+├── admin/               # admin HTTP API（auth + inbox + proposal + audit + token + system + git + search + templates）
+│   ├── auth.go          # session token
+│   ├── inbox.go         # /api/inbox/*
+│   ├── proposals.go     # /api/proposals/*
+│   ├── audit.go         # /api/audit/*
+│   ├── tokens.go        # /api/auth_tokens/*
+│   ├── system.go        # /api/system/*
+│   ├── git.go           # /api/git/*
+│   ├── knowledge.go     # /api/knowledge/*
+│   └── templates.go     # /api/templates/*
+├── merge/               # 3-way merge 工具
+└── config/              # config.yaml + SCHEMA.md 加载
+```
+
+**依赖最小化**：
+
+- `auth/` → `config/`，`vault/`（仅读 path）
+- `audit/` → `auth/`（client_id）
+- `tools/` → `auth/`（注入 ctx）+ `audit/`（写审计）+ `proposal/`/`inbox/`（业务）
+- `admin/` → `auth/`（session）+ 业务 module（CRUD）
+
+**新加模块流程**：
+
+1. `internal/<name>/` 建新 package
+2. `admin/<name>.go` 加 HTTP 路由
+3. `admin/src/routes/{group}/{name}.tsx` 加前端页面
+4. 在 §21.5.1 路由表 + §21.6.2 API 端点表 加新条目
+5. **不动现有任何文件**（除非加新依赖）
 
 ---
 
@@ -1993,23 +2072,21 @@ v0.1 实现建议：
 
 ### 22.1 技术栈
 
-建议 Go：
-
 ```text
-Go
+# MCP Server
+Go 1.25+
 mcp-go
 SQLite FTS5
 yaml parser
-goldmark 或轻量 markdown parser
-```
+git merge-file (text 3-way merge)
 
-理由：
-
-```text
-1. 用户主力 Go。
-2. 后续可复用 Eino/mcp-go 经验。
-3. 单 binary 部署简单。
-4. 适合 VPS 常驻服务。
+# Admin WebUI
+React 19+
+TypeScript 5+
+Vite 5+
+Tailwind CSS 4+
+TanStack Router
+shadcn/ui 风格组件
 ```
 
 ### 22.2 目录
@@ -2017,18 +2094,23 @@ goldmark 或轻量 markdown parser
 ```text
 server/mcp/
 ├── cmd/workbase-mcp/
-├── internal/config/
-├── internal/auth/
-├── internal/audit/
-├── internal/vault/
-├── internal/indexer/
-├── internal/search/
-├── internal/tools/
-├── internal/proposal/
-├── internal/inbox/
-├── internal/apply/
-├── internal/admin/          # webUI 审批后台
-├── internal/sanitize/
+├── internal/
+│   ├── config/
+│   ├── auth/
+│   ├── audit/
+│   ├── vault/                # vault 读取、frontmatter、path 规范
+│   ├── index/                # indexer + access 热度
+│   ├── search/               # FTS 查询 + 权重 + 信号
+│   ├── tools/                # MCP tool handlers
+│   ├── proposal/             # proposal schema / 落盘 / preview
+│   ├── inbox/                # inbox 待办 / 状态流转 / retention
+│   ├── apply/                # webUI 审批后 3-way apply + git commit + reindex
+│   ├── admin/                # admin HTTP API
+│   ├── sanitize/             # 敏感模式检测 + warning（不打码、不拒绝）
+│   ├── merge/                # 3-way merge 工具
+│   └── manifest/             # workbase.identity 从 vault 读取
+├── admin/                    # 独立 TS 项目（§21.5）
+├── tests/                    # 验收脚本
 └── README.md
 ```
 
@@ -2036,139 +2118,86 @@ server/mcp/
 
 | 模块 | 职责 |
 |---|---|
-| `config` | 读取 config.yaml |
-| `auth` | Bearer token hash、scope 校验 |
-| `audit` | SQLite 审计日志 |
-| `vault` | 读取 Vault 文件、frontmatter、路径规范 |
-| `indexer` | 构建 notes/projects/skills/mcps/context index |
-| `search` | FTS 查询 |
+| `config` | 读 config.yaml + 默认值 fallback |
+| `auth` | Bearer token hash、scope 校验、admin session |
+| `audit` | SQLite 审计日志 + 最小字段集 |
+| `vault` | 读 vault 文件、frontmatter、path 规范、kind 分类 |
+| `index` | 扫 vault 写 `notes` 单表（`kind` 隔离）+ 访问热度 |
+| `search` | FTS 查询 + 权重 + 信号 + 命中门禁 + 排序 |
 | `tools` | MCP tool handlers |
-| `proposal` | proposal schema、落盘、preview |
-| `inbox` | inbox 待办落盘、读取、状态流转、7 天清理 |
-| `apply` | webUI 审批后 apply + git commit + reindex |
-| `admin` | webUI 后台 HTTP API（proposal 审批 + inbox 编辑/状态调整） |
-| `sanitize` | 敏感信息检测与脱敏 |
+| `proposal` | proposal schema / 落盘 / preview / base_commit |
+| `inbox` | inbox 待办落盘 / 读取 / 状态流转 / retention |
+| `apply` | webUI 审批后 3-way apply + git commit + reindex |
+| `admin` | admin HTTP API（auth + inbox + proposal + access） |
+| `sanitize` | 敏感模式检测 + warning。读出不打码，写入不拒绝 |
+| `merge` | 3-way merge 工具 + frontmatter 冲突检测 |
+| `manifest` | workbase.identity 从 vault 读取 |
 
 ---
 
 ## 23. 验证与验收
 
-### 23.1 v0.1 验收标准
+### 23.1 验收标准
+
+v0.1 完整验收（**不分版本**）：
 
 ```text
-1. 未带 token 请求 MCP 返回 401。
-2. 带只读 token 可调用 manifest/context/search/get。
-3. context.startup 返回当前用户工作风格与活跃项目摘要。
-4. knowledge.search 可检索 Vault 镜像内容。
-5. project.get 可返回项目当前重点、决策、下一步。
-6. skill.list/get 从 Workbase/skills/*.md 生成。
-7. mcp.list/get 从 Workbase/mcps/*.md 生成。
-8. proposal.create 可创建 typed proposal。
-9. inbox.append 可新建 pending 待办；inbox.update 可改状态；inbox.list/get 可读回。
-10. webUI：proposal 可审批（同意/拒绝/编辑）；inbox 可创建、编辑、调整状态（pending → reviewing → done / abandoned）。
-11. 同意 → apply + git commit → rebuild + reindex。
-12. secret visibility 内容默认不返回。
-13. 返回内容不包含真实 IP、私钥路径、token。
-14. 所有 tool call 有审计记录。
-15. sync.ps1 推送后 VPS reindex 可更新 MCP index。
-16. MCP apply 后本地 git pull 可同步回该修改。
+ 1. 未带 token 请求 MCP 返回 401。
+ 2. 带只读 token 可调用 workbase.identity / context / search / get。
+ 3. workbase.identity.workbase 描述性字段从 vault 即时读取（不重启进程）。
+ 4. 修改 Workbase/mcps/jiangnan-workbase.md 后立即反映到 identity.workbase。
+ 5. identity.workbase.visibility_policy 从 config.yaml schema.visibility_policy 读取（改 config 后重启生效）。
+ 6. workbase.identity.auth 反映当前 token 实时状态（status / last_used_at / use_count）。轮换后旧 token 立刻按 grace 规则（默认 0 = 401），identity 不会再报 active。
+ 7. context.startup 返回当前用户工作风格与活跃项目摘要。secret pack 即使标了 startup 也不进合成。context.get 对 draft 放行，secret → `secret_blocked`。
+ 8. knowledge.search 默认可检索 `note` + `article`（含 `文章/`）。`scope=all` 含 `draft`。不返回 project / skill / mcp / context / 友链 / secret。已传 kind 过滤后为空 → 空结果，不回落默认。intent / scope 非法值 → `invalid_argument`。
+ 9. knowledge.search 权重：config 有用 config，config 无用代码默认。
+10. knowledge.search 命中门禁与排序信号分离。
+11. project.get 可返回项目当前重点、决策、下一步。
+12. skill.list / get 从 Workbase/skills/*.md 生成。
+13. mcp.list / get 从 Workbase/mcps/*.md 生成。
+14. Workbase kind 分类：context / skill / mcp / note / article / project 隔离。knowledge.search 默认只出 note+article。knowledge.get 其它 kind → `note not found`。notes.id = vault 相对路径（正斜杠，含 `.md`）。入库 / 查询一律 ToSlash。
+15. proposal.create：可选 `expected_base`；对不上拒绝；不传才用当前 HEAD。
+16. proposal 状态机：`pending → approved → applied`（终态）/ `rejected`（终态）/ `approved → conflict → approved`（暂停态）。没有 `pending → conflict`。
+17. 同意 → 先在 base 文件上施加 operation 得到完整 ours，再 3-way（base=文件@base_commit, other=文件@HEAD, ours=完整文件）。payload 片段不当 ours。
+18. 落盘 + git commit + SHA-256 校验通过 → `applied`。reindex / rebuild 失败仍是 `applied`，单独重跑。
+19. 3-way / commit 失败 → `conflict`，proposal 保留，返回冲突区段。救回默认换新 base。
+20. frontmatter 内部冲突 → 一律 conflict（不自动合并结构化字段）。
+21. 幂等：重复 apply 同一 proposal 返回原 receipt。
+22. inbox.append 可新建 pending；inbox.update 可改状态；inbox.list / get 可读回。敏感命中只 warning，不拒绝。warnings 不落盘，get 每次 rescan。
+23. inbox retention_days 可配，config 有用 config，config 无用代码默认。
+24. inbox done / abandoned 超过 retention_days 自动删除。
+25. webUI：proposal 可审批（同意 / 拒绝 / 编辑）；inbox 可创建 / 编辑 / 调整状态。
+26. webUI 独立登录页，session token 不用 Basic Auth。
+27. 访问热度按艾宾浩斯曲线 score = count * exp(-elapsed/half_life) 排序。
+28. half_life_days 可配，config 有用 config，config 无用代码默认。
+29. 审计最小字段集齐全（ts / tool / client_id / scopes / args_digest / result_status / duration_ms）。
+30. secret visibility 内容默认不返回（search / list / startup / get）。draft 进 search `scope=all`、各 list、`context.startup`；有对应 scope 就能 get。
+31. 审计 / 日志不含 token 原文、token hash、私钥块。授权 Agent 读 Skill / MCP / 文章拿完整原文。公开博客不发布 private / secret。
+32. 所有 tool call 有审计记录。
+33. sync.ps1 推送后 VPS reindex 可更新 MCP index。
+34. MCP apply 后本地 git pull 可同步回该修改。
+35. 字段映射：每个工具的请求 / 返回 schema 在 SCHEMA.md 有独立小节。
+36. 可见性策略：config.yaml 的 schema 块改后 `systemctl restart` 生效（不热更新，不吃 SIGHUP）。
+37. 视觉规范：后台与博客共享同一套 token。
+38. 文档分层：设计文档 / SCHEMA.md / config.yaml（schema 块）/ Workbase 职责清晰，不重复。
 ```
 
 ### 23.2 文档验收
 
 ```text
-1. docs/agent-workbase-mcp-v0.1.md 存在。
-2. README 更新项目定位。
-3. 不含真实 VPS IP / 私钥路径。
-4. 说明 v0.1 不使用向量数据库。
-5. 说明 Proposal target/operation schema。
+1. docs/agent-workbase-mcp-v0.1.md 重写完成。
+2. SCHEMA.md 新建完成（含内容格式 + MCP 字段映射 + 审计 + 热度 + 状态机）。
+3. README 更新项目定位。
+4. 不含真实 VPS IP / 私钥路径。
+5. v0.1 不使用向量数据库说明保留。
+6. Proposal target / operation schema 保留。
 ```
 
 ---
 
 ## 24. Milestones
 
-### M0：设计固化
-
-产物：
-
-```text
-docs/agent-workbase-mcp-v0.1.md
-README 定位更新
-Workbase 目录规范
-```
-
-### M1：Vault Schema 与示例内容
-
-产物：
-
-```text
-Workbase/context/*.md
-Workbase/skills/example.md
-Workbase/mcps/example.md
-vite.config.ts 排除 Workbase/ 栏目
-SCHEMA.md 更新
-```
-
-### M2：Indexer MVP
-
-产物：
-
-```text
-server/mcp index command
-notes/projects/skills/mcps/context index
-SQLite FTS 或 JSON index
-```
-
-### M3：MCP Read-only Server
-
-产物：
-
-```text
-workbase.manifest
-context.startup/context.get
-knowledge.search/get
-project.list/get
-skill.list/get
-mcp.list/get
-Bearer auth
-audit
-```
-
-### M4：Proposal + Inbox + WebUI 审批
-
-产物：
-
-```text
-proposal.create/list/get
-inbox.append/update/list/get
-proposal markdown 落盘
-webUI 后台（proposal 审批：同意/拒绝/编辑；inbox：创建 + 编辑 + 状态调整）
-同意 → apply + git commit
-敏感信息检查
-```
-
-### M5：VPS 部署
-
-产物：
-
-```text
-systemd service
-Caddy reverse proxy
-post-receive reindex
-部署文档
-```
-
-### M6：双向同步加固
-
-产物：
-
-```text
-base_commit 校验（已完成 L2）
-冲突检测与 conflict proposal
-sync.ps1 pull --rebase + push
-本地 Obsidian 回流验证
-```
+不分阶段。v0.1 = 完整版。完成后直接转 v1.0 维护期。
 
 ---
 
@@ -2176,115 +2205,67 @@ sync.ps1 pull --rebase + push
 
 | 风险 | 对策 |
 |---|---|
-| 私密内容泄露 | visibility + scope + sanitize + audit |
-| token 泄露 | 不入库、hash 存储、独立 token、可撤销 |
-| 双主写入冲突 | v0.1 proposal，v0.2 Git-backed base_commit |
+| 私密内容泄露 | visibility + scope + audit（sanitize 只 warning，不挡） |
+| token 泄露 | 不入库、hash、独立、可撤销 |
+| 硬编码描述绕过 Proposal | §0.1 单一事实源 + 验收 §23.1.3–5 |
+| 双主写入冲突 | 3-way merge + frontmatter 冲突即停 |
 | Agent 乱写知识库 | typed proposal + adapter + approval |
-| Inbox 堆积 | 状态流转 + done/abandoned 7 天自动删除 |
-| 向量库复杂化 | v0.x 不引入 |
-| Registry 双事实源 | Skill/MCP 用 Markdown frontmatter 作为事实源 |
-| startup 与 context 不一致 | startup 仅派生，不直接写 |
-| 公开仓库误提交部署信息 | 文档和脚本使用占位符与 env |
+| Inbox 堆积 | 状态流转 + retention_days 可配 |
+| 向量库复杂化 | v0.1 不引入 |
+| Registry 双事实源 | Workbase/*.md 作为事实源 |
+| startup 与 context 不一致 | startup 仅派生 |
+| 公开仓库误提交部署信息 | env + 占位符 |
+| 视觉规范分裂 | §0.2 内容统一分发 + §3.9 视觉规范统一 |
+| 后台简陋 | §21.5 升级为独立 TS 项目 |
+| 热度算法误判 | 艾宾浩斯曲线 + 实时计算 + 人工可覆盖 |
+| 字段映射不同步 | 文档分层 §0.3 + 双改流程 |
+| 配置文件缺默认值 | 标准 fallback：cfg → const |
 
 ---
 
-## 26. 待确认问题
-
-已确认（2026-08-17）：
+## 26. 已确认决策（2026-08-19）
 
 ```text
-1. Workbase/ 放在 D:\Data\工作台\ 根下。
-2. inbox 落点：只落 VPS 私有区 /home/studio/workbase/inbox/。
-3. reindex 触发：post-receive 主动触发。
-4. proposal/inbox 只存 VPS；proposal 走 webUI 审批后 apply，inbox 是独立待办（pending → reviewing → done/abandoned，7 天删除，不审批，不转 proposal）。
-```
-
-仍待确认：
-
-```text
-1. 后续仓库是否 rename 为 jiangnan-workbase？
-2. Context Pack 初始需要哪些文件？
-3. Skill/MCP Registry 哪些条目先作为样例？
-4. webUI admin 的认证方式（单账号密码 / OIDC / 其他）？
-5. MCP apply 后是否需要在本地 Obsidian 内做二次确认，还是直接 git pull 即可？
-6. token scope 是否需要区分不同 Agent 工具？
-```
-
----
-
-## 27. 初始推荐决策
-
-为了最小可行但结构完整，推荐初始决策如下：
-
-```text
-1. 项目定位改为 Blog as Agent Workbase。
-2. 暂不 rename repo，先补 docs 与 server/mcp。
-3. MCP transport 使用 Streamable HTTP。
-4. v0.1 auth 使用 Bearer Token + scopes。
-5. v0.x 不使用向量数据库。
-6. Obsidian Vault 是正式内容事实源。
-7. context.startup 是派生结果，不直接写。
-8. Skill/MCP Registry 用 Markdown + frontmatter。
-9. 正式写入走 proposal.create；待办走 inbox.append/update，两者完全独立。
-10. proposal/inbox 只存 VPS；proposal 走 webUI 审批后 Git-backed apply，inbox 是独立待办（pending → reviewing → done/abandoned，7 天删除，不审批）。
-11. Workbase/ 放本地 Vault 根，但构建时排除出公开栏目。
-12. inbox 落 /home/studio/workbase/inbox/，不进本地 Vault，不转 proposal。
-13. reindex 由 post-receive 主动触发。
-14. MCP apply 后 commit 到 vault.git，本地 git pull 回流。
-15. sync.ps1 改为先 pull 再 push。
+ 1. Workbase/ 放在 D:/Data/工作台/ 根下。
+ 2. inbox 落点：VPS 私有区 /home/studio/workbase/inbox/。
+ 3. reindex 触发：post-receive 主动触发。
+ 4. proposal / inbox 只存 VPS；proposal 审批后 3-way apply；inbox 是独立待办。
+ 5. 不引入向量数据库。
+ 6. SCHEMA.md 放项目内（D:/Code/Front-end/博客/SCHEMA.md），每工具一张细粒度表。
+ 7. 字段映射修改 = 同步改 SCHEMA.md + 对应 Go 代码（必须双改）。
+ 8. 后台 = React + Vite + Tailwind + TS，与博客前端一致。
+ 9. 后台登录 = 独立 session token，不用浏览器弹窗 Basic Auth。
+10. 视觉规范 = 公开博客和后台共享一套设计 token。
+11. 内容统一分发 = 同一份 vault，两套扫描（Vite 构建 vs MCP indexer），不是共享同一份 index。
+12. 权重 / retention_days / half_life_days 等可配项 = config 可选覆盖 + 代码默认值。
+13. 热度算法 = 艾宾浩斯曲线，v0.1 立即实施。
+14. base_commit = 可选 expected_base 校验；3-way 用完整 ours，不是 payload 片段；无冲突 auto-apply，有冲突 conflict。
+15. frontmatter 内部冲突 = 一律 conflict，不自动合并。
+16. 文档分层 = 设计文档 / SCHEMA.md / Workbase 不重复。
+17. 不分版本（v0.1 = 完整版）。
+18. 不重命名仓库（继续 jiangnan-blog）。
 ```
 
 ---
 
-## 28. 参考资料
+## 27. 参考资料
 
-- MCP Streamable HTTP transport, 2026-07-28 specification: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/basic/transports/streamable-http.mdx
-- MCP Authorization specification: https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization
-- MCP 2026-07-28 release notes: https://blog.modelcontextprotocol.io/posts/2026-07-28/
-- 参考项目 Personal Agent Foundation: https://github.com/DongLiStudio/personal-agent-foundation
-- 参考项目 mnemon（LLM-supervised 记忆层）: https://github.com/mnemon-dev/mnemon
-- MAGMA（四图记忆模型）: https://arxiv.org/abs/2601.03236
+- MCP Streamable HTTP transport, 2025-11-25 specification
+- MCP Authorization specification
+- MCP 2025-11-25 release notes
+- 参考项目 Personal Agent Foundation
+- 参考项目 mnemon（LLM-supervised 记忆层）
+- MAGMA（四图记忆模型）
 
-### 28.1 参考 mnemon 的吸收
+### 27.1 参考 mnemon 的吸收
 
-`mnemon-dev/mnemon` 是 LLM-supervised 记忆层（四图模型 + `remember`/`link`/`recall` 三原语 + 单二进制 SQLite）。它与 Workbase 范式不同——它把记忆抽成结构化 Insight/Edge 图，我们坚持 Markdown 事实源 + WikiLink 反链。因此**不采纳四图存储引擎**，但吸收其检索层方法论、生命周期与写入安全语义，映射到现有 FTS5 + 反链 + Proposal/Git-apply：
+| # | 吸收点 | 落到 Workbase |
+|---|---|---|
+| 1 | Signal transparency | `knowledge.search` 返回 `signals` + `matched_via` |
+| 2 | Intent-aware retrieval | `knowledge.search` 加 `intent` 参数 |
+| 3 | Built-in dedup | Proposal apply 前做内容重叠检测 |
+| 4 | Privacy-safe receipts | `audit.list_recent` 含 `args_digest`（不存原文） |
+| 5 | Receipt 状态机 + 幂等 | Proposal receipt + replayed 标记 |
+| 6 | Named stores 隔离 | 由 scope + project 覆盖 |
 
-| # | 吸收点 | mnemon 原设计 | 落到 Workbase |
-|---|---|---|---|
-| 1 | Signal transparency | recall 结果暴露 keyword/entity/similarity/graph 信号分解 | `knowledge.search` 返回 `signals` + `matched_via`（§9.4） |
-| 2 | Intent-aware retrieval | WHY/WHEN/ENTITY/GENERAL 意图自适应权重 | `knowledge.search` 加可选 `intent` 参数（§9.4） |
-| 3 | Built-in dedup | remember 内建 diff，重复跳过 / 冲突替换 | Proposal apply 前做内容重叠检测（§17.6 前置） |
-| 4 | Privacy-safe receipts | receipt 只输出操作名 + SHA-256，不泄原文 | `audit.list_recent` 加 `mode: hashed`（§9.16） |
-| 5 | Receipt 状态机 + 幂等 | accepted/rejected/input_invalid/replayed 严格区分 | Proposal 加 receipt + 幂等语义（§17.6） |
-| 6 | Named stores 隔离 | MNEMON_STORE 独立库 | 已由 scope + project 覆盖，仅确认方向 |
-
-不采纳（理由）：
-
-| 不采纳点 | 理由 |
-|---|---|
-| 四图模型（temporal/entity/causal/semantic 多类型边） | 违背 Markdown 事实源 + 最简实现，需引入抽取器 |
-| 内嵌 embedding（Ollama nomic-embed-text） | 已定 v0.x 不引入向量库，FTS5 + 反链足够 |
-| Agency 本地 daemon + peer exchange + CAS artifact | 个人工作台过度，Git-backed apply 已覆盖受控写入 |
-| 多 runtime 保姆式 setup | 已否决，Agent 自行适配 Skill/MCP |
-
----
-
-## 29. 下一步执行建议
-
-下一步建议按顺序做：
-
-```text
-1. 更新 README：从个人博客升级为 Agent Workbase。
-2. 同步 SCHEMA.md：补充 Workbase/ 目录与 visibility 规范。
-3. vite.config.ts：构建排除 Workbase/（避免作为公开栏目）。
-4. 在 Vault 新建 Workbase/context 初始文件。
-5. 在 Vault 新建 Workbase/skills 与 Workbase/mcps 样例。
-6. 实现 server/mcp indexer MVP。
-7. 实现 read-only MCP tools。
-8. 实现 proposal.create + inbox.append/update。
-9. 实现 webUI 审批后台（同意/拒绝/编辑 + apply + commit）。
-10. post-receive 增加 reindex 触发。
-11. sync.ps1 改为先 pull 再 push。
-12. 部署到 VPS 内网端口，Caddy 反代。
-13. 等 HTTPS 条件满足后开放公网私密接入。
-```
+不采纳：四图模型（违背 Markdown 事实源）、内嵌 embedding（不引入向量库）、本地 daemon + peer exchange（个人工作台过度）、多 runtime 保姆式 setup（已否决）。

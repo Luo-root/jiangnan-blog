@@ -1,119 +1,188 @@
-# workbase-mcp
+# Workbase MCP Server
 
-遇见江楠 · Agent Workbase 的 MCP 服务端 + WebUI 后台。
+公网私密 Agent 接入层。Vault 是事实源，本目录是协议实现。
 
-## 技术栈
+**写代码前先读契约，不要抄本目录里现有 Go。**
 
-- Go 1.25+（mcp-go v0.58.0 要求；本机可用 `GOTOOLCHAIN=auto`）
-- mark3labs/mcp-go（Streamable HTTP）
-- yaml.v3（frontmatter 解析）
-- 标准库 net/http
-- 嵌入式 WebUI（Go embed + 原生 HTML/CSS/JS）
-
-v0.1 不引入 SQLite / 向量数据库。
-
-## 目录
-
-```
-server/mcp/
-├── cmd/workbase-mcp/main.go   # 入口
-├── internal/
-│   ├── config/     # YAML 配置读取
-│   ├── vault/      # Obsidian Vault 扫描 + frontmatter 解析
-│   ├── index/      # JSON 索引 + 访问热度计数
-│   ├── inbox/      # 待办管理（append/update/list/get + 7 天清理）
-│   ├── proposal/   # 写入请求管理（create/list/get）
-│   ├── apply/      # Proposal 真实落盘
-│   ├── auth/       # Bearer Token + scope 校验
-│   ├── sanitize/   # 敏感模式检测（IP/密钥/私钥/token）
-│   ├── admin/      # WebUI 后台 HTTP API + 嵌入式静态页面
-│   ├── audit/      # 审计日志
-│   └── tools/      # MCP 工具注册
-└── README.md
-```
-
-## 快速启动
-
-```bash
-cd server/mcp
-go run ./cmd/workbase-mcp
-```
-
-默认配置（无需 config.yaml）：
-- 从 `D:/Data/工作台` 构建索引
-- inbox 存 `.workbase/inbox/`
-- proposals 存 `.workbase/proposals/`
-- admin WebUI 监听 `127.0.0.1:8788`
-
-打开浏览器访问 `http://127.0.0.1:8788` 进入看板式 inbox。
-
-## 命令行
-
-```bash
-# 仅重建索引（不启动服务）
-go run ./cmd/workbase-mcp -reindex
-
-# 指定配置文件
-go run ./cmd/workbase-mcp -config /path/to/config.yaml
-```
-
-## WebUI
-
-- **Inbox 看板**：四列（待处理 → 待审核 → 已完成 / 已废弃），拖拽卡片换状态
-- **热度**：访问次数降序排序 + 条形图可视化
-- **新建**：点击列下方 `+ 新建待办` 按钮
-
-## API
-
-| Method | Path | 说明 |
+| 读什么 | 路径 | 职责 |
 |---|---|---|
-| GET | `/api/inbox` | 列出所有待办摘要 |
-| POST | `/api/inbox` | 新建 pending 待办 |
-| GET | `/api/inbox/{id}` | 读取单条 |
-| PUT | `/api/inbox/{id}` | 编辑内容或改状态 |
-| GET | `/api/heat` | 访问热度排名 |
-| GET | `/api/proposals` | 列出 proposal |
-| POST | `/api/proposals` | 创建 proposal |
+| 设计 | [`../../docs/agent-workbase-mcp-v0.1.md`](../../docs/agent-workbase-mcp-v0.1.md) | why / 验收 |
+| 字段 | [`../../SCHEMA.md`](../../SCHEMA.md) | API / 状态机 / 表 / 算法 |
+| 模板 | [`config.example.yaml`](config.example.yaml) | 可启动的字段结构 |
+| 自描述 | `D:/Data/工作台/Workbase/` | Agent 看到的文案 |
 
-## 配置
+骨架已按契约落地：`Load` 读 `schema:` 块、8 个标准 scope、`workbase.identity`、`{runtime}/auth.sqlite`、`/internal/reindex` 不靠 `RemoteAddr`。  
+还没改、不要当规格：默认 9 条敏感正则、payload 当 ours、`noteID()` 去 `.md` 后缀、JSON index（后续 PR 换成 SQLite notes）。进程等索引 / 写路径重构后再启。
 
-`config.yaml` 示例（开发期可省略，使用默认值）：
+---
 
-```yaml
-server:
-  listen: 127.0.0.1:8787
+## 1. 同一份 vault，两套扫描
 
-vault:
-  root: D:/Data/工作台
-  git_dir: ""
-
-workbase:
-  root: D:/Data/工作台/Workbase
-  index: ./.workbase/index
-  proposals: ./.workbase/proposals
-  inbox: ./.workbase/inbox
-
-admin:
-  listen: 127.0.0.1:8788
+```text
+D:/Data/工作台/
+        ├─ Vite virtual:vault-tree   → 公开博客（只收 public 且非草稿）
+        └─ MCP indexer               → SQLite notes（private/secret 按 scope 读）
 ```
 
-## 部署
+不共享同一份 index 文件。后台也不另开一套 vault 路径。
 
-编译为单二进制后部署到 VPS：
+## 2. 双根
 
-```bash
-GOOS=linux GOARCH=amd64 go build -o workbase-mcp ./cmd/workbase-mcp
+| 字段 | 是什么 | 本地 | VPS |
+|---|---|---|---|
+| `vault.root` | Vault 总根 | `D:/Data/工作台` | `/home/studio/workbench` |
+| `workbase.root` | Registry 源（`context/` `skills/` `mcps/`） | `D:/Data/工作台/Workbase` | `/home/studio/workbench/Workbase` |
+| `workbase.runtime` | 进程私有区（index / proposals / inbox / audit / auth） | `./`（相对本目录） | `/home/studio/workbase` |
+
+描述性字符串必须从 `workbase.root` 即时读。Go 不许硬编码「是什么 / 能做什么」。
+
+## 3. 配置
+
+- 开发：本目录 `config.yaml`（不进 Git）
+- 模板：`config.example.yaml`
+- 权威字段：`SCHEMA.md §1`
+- 启动必填：`schema.visibility_policy` + `admin_auth.user` / `admin_auth.pass_hash`
+- Token **不在 yaml**。只留 `auth.grace_period_hours`（默认 0）
+- `schema.sensitive_patterns` 默认 `[]`（关）
+
+复制模板：
+
+```powershell
+Copy-Item config.example.yaml config.yaml
+# 填 vault.root / workbase.root / admin_auth
 ```
 
-```bash
-# VPS 上
-./workbase-mcp -config /home/studio/workbase/config.yaml
+Admin 口令是 SHA-256 hex，无盐，不含 `sha256:` 前缀。单账号个人台可接受，不是通用口令方案。
+
+## 4. 鉴权
+
+所有 MCP 工具都必须带 Bearer token。没有公开 endpoint。
+
+8 个可签给 Agent 的 scope（`SCHEMA.md §2.1`）：
+
+```text
+read:context / read:knowledge / read:project / read:registry
+read:inbox / write:proposal / write:inbox / ops:audit
 ```
 
-systemd 配置参考设计文档 §21.1。
+- `workbase.identity`：任意有效 token（合并原 `workbase.manifest` + `workbase.whoami`）
+- `write:proposal` 同时覆盖 create / list / get
+- `admin:reindex` **不是** Agent scope。Token UI 不展示、不签发
 
-## 注意事项
+Token 在 `{runtime}/auth.sqlite` 的 `auth_tokens`：
 
-- `Workbase/` 目录：**博客构建（vite.config.ts）排除**，但 **MCP 索引器包含**（skill/mcp/context registry 来源）。
-- inbox 的 pending/reviewing 状态不自动删除；done/abandoned 保留 7 天后自动清理。
-- access.json 在进程退出时写盘，重启后恢复热度。
+```sql
+CREATE UNIQUE INDEX idx_auth_tokens_active_name
+  ON auth_tokens(name) WHERE status='active';
+```
+
+签发 / 轮换：SQLite 成功后**同步** upsert `tokenCache`，再返回明文。撤销可以等 ≤5s。  
+轮换：先把 SQLite 旧行改成 `grace`，再**同步改旧 hash 的 cache**（`grace_period_hours=0` 则直接删），再 INSERT 同名新行并 upsert 新 cache。只 upsert 新行会让旧 token 再活 ≤5s 的 `active`。
+
+## 5. 工具（19）
+
+```text
+workbase.identity
+context.startup / context.get
+knowledge.search / knowledge.get
+project.list / project.get
+skill.list / skill.get
+mcp.list / mcp.get
+proposal.create / proposal.list / proposal.get
+inbox.append / inbox.update / inbox.list / inbox.get
+audit.list_recent
+```
+
+`knowledge.search` 默认 `kind=["note","article"]`（`文章/` 进 `article`）。已传 `kind` 只保留这两个；过滤后为空 → 空结果，不回落默认。`intent` / `scope` 非法值 → `invalid_argument`。`notes.id` = vault 相对路径（正斜杠，含 `.md`）；入库 / 查询一律 `filepath.ToSlash`。`scope=all` 含 `draft`。响应 `kind` 原样返回。`友链/` 不入库。即使 `scope=all` 也不出 secret（含摘要）。secret 只走对应 get 显式 id。`knowledge.get` 只返 `kind ∈ {note, article}`，其它 kind → `note not found`。
+
+`context.startup` 跳过 secret（即使标了 `startup: true`）；draft 照收。`context.get` 对 draft 放行，secret → `secret_blocked`。
+
+## 6. 写入
+
+Agent 改 Vault 正式内容的唯一入口是 `proposal.create`。Inbox 是待办，不审批、不 apply、不 commit。
+
+客户端**不要传**：
+
+- `kind`（服务端从 `target.type` 抄）
+- `validation.checks`（检查名单服务端写死）
+
+`target.path` 必须落在 `vault.root` 下（防 `../`），**不**要求文件已存在。入库 / 校验前一律 `filepath.ToSlash`。
+
+| operation | 文件 |
+|---|---|
+| `create_file` / `register_item` | 必须不存在；落盘前再 stat，已存在 → conflict |
+| `append` / `append_section` / `patch_section` | 必须存在 |
+| `append_section` 标题不存在 | 先建标题再追加 |
+| `patch_section` 标题不存在 | conflict / `section_not_found` |
+
+`expected_base` 可选：有传但对不上 → `stale_base`；不传才用当前 HEAD。
+
+状态机：`pending → approved → applied` / `rejected`；`approved → conflict → approved`。  
+**没有** `pending → conflict`。创建校验失败是控制层拒绝，不写 receipt。
+
+3-way：先在 `base_commit` 文件上施加 operation 得到**完整 ours**，再 `git merge-file`。payload 片段不当 ours。`create_file` / `register_item` 无 ancestor，不走 3-way。
+
+apply 分阶：
+
+- 落盘 + commit 失败 → `conflict`
+- commit 已成功、reindex / rebuild 失败 → 仍是 `applied`，副作用单独重跑，禁止再 apply
+
+conflict 救回默认换新 base（重读当前 HEAD）。
+
+## 7. 敏感模式
+
+默认关。授权 Agent 读 Skill / MCP / 文章拿完整原文。
+
+开启后也只警告、不拒绝、读出不 `[REDACTED]`。挡未授权的是 token + scope + visibility。
+
+日志 / audit 仍不写 token 原文、不写 token hash（跟这个开关无关）。
+
+## 8. 内部 reindex
+
+`POST /internal/reindex` 和 MCP 协议同进程、mux 分路。不要让 mcp-go 把这条 POST 吃成协议错误。
+
+保护靠三件事，**不要**靠 `RemoteAddr == 127.0.0.1`（反代会改掉对端地址）：
+
+1. Caddy 不转发 `/internal*`
+2. 进程 bind `127.0.0.1:8787`
+3. hook / apply 副作用本机直打，不带 Bearer
+
+```text
+mcp.<domain> {
+    handle /internal* { respond 404 }
+    reverse_proxy 127.0.0.1:8787
+}
+```
+
+## 9. SQLite（三套库）
+
+```text
+{runtime}/index/notes.sqlite    notes / notes_fts / links / backlinks
+{runtime}/auth.sqlite           auth_tokens
+{runtime}/audit/audit.sqlite    audit_log
+```
+
+索引单表 + `kind` 隔离。不开 projects / skills / mcps / contexts 分表。都不进 Vault / Git。
+
+热度：`score = access_count * exp(-elapsed_days / half_life_days)`，默认半衰期 7 天。
+
+## 10. 本地跑（重构完成后）
+
+```powershell
+cd D:\Code\Front-end\博客\server\mcp
+go test ./...
+go vet ./...
+go run ./cmd/workbase-mcp -config config.yaml
+```
+
+- MCP：`127.0.0.1:8787`
+- Admin：`127.0.0.1:8788`（独立 session，不用浏览器 Basic Auth）
+
+VPS 部署见 [`../../deploy/mcp/`](../../deploy/mcp/) 与 [`../../deploy/README.md`](../../deploy/README.md)。  
+重构完成前不要把这份旧 binary 当可用 MCP。
+
+## 11. 改字段
+
+双改：`SCHEMA.md` 对应小节 + `internal/` 代码。缺一不可。
+
+commit message：`schema(<tool>): <change>`
