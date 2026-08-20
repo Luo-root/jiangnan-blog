@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+:root {
+  --radius: 0.375rem;
+  --font-sans: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --ink-1: #2a353b;
+  --ink-2: #4a5961;
+  --ink-3: #6b7a82;
+  --ink-4: #8b9ba3;
+  --ink-5: #b7c3c9;
+  --background: #f6f8f5;
+  --foreground: #2a353b;
+  --card: #ffffff;
+  --primary: #2b7ca6;
+  --primary-foreground: #f6f8f5;
+  --accent: #33916c;
+  --destructive: #c5392b;
+  --border: #d8e1e3;
+  --muted: #edf2f1;
+  --warning: #c07828;
+}
+
+@theme inline {
+  --color-ink-1: var(--ink-1);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
+  --color-ink-5: var(--ink-5);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-muted: var(--muted);
+  --color-warning: var(--warning);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }

@@ -129,6 +129,8 @@ func main() {
 		Tokens:           tokenStore,
 		AdminUser:        cfg.AdminAuth.User,
 		AdminPassHash:    cfg.AdminAuth.PassHash,
+		Sessions:         admin.NewSessionStore(cfg.Admin.SessionTTL),
+		Limiter:          admin.NewLoginLimiter(cfg.Admin.LoginRateLimit, time.Minute),
 		VaultRoot:        cfg.Vault.Root,
 		GitDir:           cfg.Vault.GitDir,
 		ExcludedSections: excludedSections,
