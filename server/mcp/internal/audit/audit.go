@@ -35,6 +35,7 @@ type Entry struct {
 type Filter struct {
 	Limit        int
 	Since        time.Time
+	Until        time.Time
 	Tool         string
 	ClientID     string
 	ResultStatus string
@@ -143,6 +144,10 @@ func (s *Store) List(f Filter) []Entry {
 	if !f.Since.IsZero() {
 		where = append(where, "ts >= ?")
 		args = append(args, formatTS(f.Since))
+	}
+	if !f.Until.IsZero() {
+		where = append(where, "ts <= ?")
+		args = append(args, formatTS(f.Until))
 	}
 	if f.Tool != "" {
 		where = append(where, "tool = ?")

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ToastProvider } from "./components/toast";
 import { loadSession } from "./lib/auth";
 import { LoginPage } from "./routes/login";
 import { Shell } from "./routes/shell";
@@ -17,20 +18,22 @@ export function App() {
 
   const sess = loadSession();
   const onLogin = sess ? "/workspace/inbox" : "/login";
+  let page;
   if (path === "/" || path === "") {
     history.replaceState(null, "", onLogin);
-    return sess ? <Shell path="/workspace/inbox" /> : <LoginPage />;
-  }
-  if (path === "/login") {
+    page = sess ? <Shell path="/workspace/inbox" /> : <LoginPage />;
+  } else if (path === "/login") {
     if (sess) {
       history.replaceState(null, "", "/workspace/inbox");
-      return <Shell path="/workspace/inbox" />;
+      page = <Shell path="/workspace/inbox" />;
+    } else {
+      page = <LoginPage />;
     }
-    return <LoginPage />;
-  }
-  if (!sess) {
+  } else if (!sess) {
     history.replaceState(null, "", "/login");
-    return <LoginPage />;
+    page = <LoginPage />;
+  } else {
+    page = <Shell path={path} />;
   }
-  return <Shell path={path} />;
+  return <ToastProvider>{page}</ToastProvider>;
 }

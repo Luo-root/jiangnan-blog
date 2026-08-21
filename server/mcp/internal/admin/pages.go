@@ -27,11 +27,24 @@ func (h *Handler) listAudit(w http.ResponseWriter, r *http.Request) {
 		ResultStatus: r.URL.Query().Get("result_status"),
 	}
 	if since := r.URL.Query().Get("since"); since != "" {
-		if t, err := time.Parse(time.RFC3339Nano, since); err == nil {
-			f.Since = t
-		} else if t, err := time.Parse(time.RFC3339, since); err == nil {
-			f.Since = t
+		t, err := parseRFC3339(since)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_argument: since"})
+			return
 		}
+		f.Since = t
+	}
+	if until := r.URL.Query().Get("until"); until != "" {
+		t, err := parseRFC3339(until)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_argument: until"})
+			return
+		}
+		f.Until = t
+	}
+	if !f.Since.IsZero() && !f.Until.IsZero() && f.Until.Before(f.Since) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_argument"})
+		return
 	}
 	items := h.Audit.List(f)
 	if items == nil {
@@ -40,19 +53,29 @@ func (h *Handler) listAudit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, items)
 }
 
+func parseRFC3339(s string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t, nil
+	}
+	return time.Parse(time.RFC3339, s)
+}
+
 func (h *Handler) searchKnowledge(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	if q == "" {
-		writeJSON(w, http.StatusOK, search.EmptyResult(""))
+	kind := r.URL.Query().Get("kind")
+	visibility := r.URL.Query().Get("visibility")
+	tag := strings.TrimSpace(r.URL.Query().Get("tag"))
+	if q == "" && kind == "" && visibility == "" && tag == "" {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"results": []any{},
+			"message": "输入关键词或选一个过滤条件",
+		})
 		return
 	}
 	if h.Index == nil {
 		writeJSON(w, http.StatusOK, search.EmptyResult(q))
 		return
 	}
-	kind := r.URL.Query().Get("kind")
-	visibility := r.URL.Query().Get("visibility")
-	tag := strings.TrimSpace(r.URL.Query().Get("tag"))
 	sortMode := r.URL.Query().Get("sort")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	limit = search.ClipLimit(limit, search.DefaultLimit, search.MaxLimit)
@@ -62,6 +85,7 @@ func (h *Handler) searchKnowledge(w http.ResponseWriter, r *http.Request) {
 		weights = search.MergeWeights(h.SearchWeights)
 	}
 	tokens := search.Tokenize(q)
+	listOnly := q == ""
 	now := time.Now()
 	started := now
 	var hits []search.Result
@@ -76,6 +100,19 @@ func (h *Handler) searchKnowledge(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		doc := search.FromNote(n, h.Index.Count(n.ID), h.Index.LastAccess(n.ID), len(h.Index.Backlinks(n.ID)))
+		if listOnly {
+			hits = append(hits, search.Result{
+				ID:         doc.ID,
+				Title:      doc.Title,
+				PathHint:   doc.ID,
+				Kind:       doc.Kind,
+				Visibility: doc.Visibility,
+				Summary:    doc.Summary,
+				Score:      0,
+				Signals:    map[string]float64{},
+			})
+			continue
+		}
 		hit, ok := search.Score(doc, tokens, weights, nil, h.HalfLifeDays, now)
 		if !ok {
 			continue
@@ -200,15 +237,20 @@ func (h *Handler) gitDiff(w http.ResponseWriter, r *http.Request, commit string)
 }
 
 type Template struct {
-	ID         string   `json:"id"`
-	Name       string   `json:"name"`
-	Reason     string   `json:"reason"`
-	TargetType string   `json:"target_type"`
-	Operation  string   `json:"operation"`
-	Section    string   `json:"section,omitempty"`
-	Payload    string   `json:"payload"`
-	Scopes     []string `json:"scopes,omitempty"`
-	UpdatedAt  string   `json:"updated_at"`
+	ID          string   `json:"id"`
+	Kind        string   `json:"kind"`
+	Name        string   `json:"name"`
+	Reason      string   `json:"reason"`
+	TargetType  string   `json:"target_type"`
+	Operation   string   `json:"operation"`
+	Section     string   `json:"section,omitempty"`
+	Payload     string   `json:"payload"`
+	Title       string   `json:"title,omitempty"`
+	Content     string   `json:"content,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Scopes      []string `json:"scopes,omitempty"`
+	UpdatedAt   string   `json:"updated_at"`
 }
 
 func (h *Handler) listTemplates(w http.ResponseWriter, r *http.Request) {
@@ -231,6 +273,7 @@ func (h *Handler) createTemplate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name required"})
 		return
 	}
+	t.Kind = normalizeTemplateKind(t.Kind)
 	if t.ID == "" {
 		t.ID = slugID(t.Name)
 	}
@@ -261,8 +304,23 @@ func (h *Handler) updateTemplate(w http.ResponseWriter, r *http.Request, id stri
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
+	if patch.Kind != "" {
+		cur.Kind = normalizeTemplateKind(patch.Kind)
+	}
 	if patch.Name != "" {
 		cur.Name = patch.Name
+	}
+	if patch.Title != "" {
+		cur.Title = patch.Title
+	}
+	if patch.Content != "" {
+		cur.Content = patch.Content
+	}
+	if patch.Tags != nil {
+		cur.Tags = patch.Tags
+	}
+	if patch.Description != "" {
+		cur.Description = patch.Description
 	}
 	if patch.Reason != "" {
 		cur.Reason = patch.Reason
@@ -337,7 +395,17 @@ func (h *Handler) loadTemplate(id string) (Template, error) {
 	if t.ID == "" {
 		t.ID = id
 	}
+	t.Kind = normalizeTemplateKind(t.Kind)
 	return t, nil
+}
+
+func normalizeTemplateKind(kind string) string {
+	switch kind {
+	case "inbox", "proposal", "token":
+		return kind
+	default:
+		return "proposal"
+	}
 }
 
 func (h *Handler) saveTemplate(t Template) error {

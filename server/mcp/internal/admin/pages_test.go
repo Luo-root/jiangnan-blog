@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/audit"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/index"
@@ -202,13 +203,30 @@ func TestTemplatesCRUD(t *testing.T) {
 	if created.ID == "" || created.Name != "append note" {
 		t.Fatalf("created=%+v", created)
 	}
+	if created.Kind != "proposal" {
+		t.Fatalf("default kind=%s", created.Kind)
+	}
+
+	w = doJSON(h, http.MethodPost, "/api/templates", map[string]any{
+		"name": "inbox todo", "kind": "inbox", "title": "t", "content": "c",
+	}, token)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("inbox tpl: %d %s", w.Code, w.Body.String())
+	}
+	var inboxTpl Template
+	if err := json.Unmarshal(w.Body.Bytes(), &inboxTpl); err != nil {
+		t.Fatal(err)
+	}
+	if inboxTpl.Kind != "inbox" {
+		t.Fatalf("kind=%s", inboxTpl.Kind)
+	}
 
 	w = doJSON(h, http.MethodGet, "/api/templates", nil, token)
 	var list []Template
 	if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 1 {
+	if len(list) != 2 {
 		t.Fatalf("list=%+v", list)
 	}
 
@@ -283,5 +301,73 @@ func TestGitHistoryAndDiff(t *testing.T) {
 	w = doJSON(h, http.MethodGet, "/api/git/diff/HEAD", nil, token)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("HEAD as sha: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSearchEmptyQueryNeedsFilter(t *testing.T) {
+	h, token := pagesHandler(t)
+	w := doJSON(h, http.MethodGet, "/api/knowledge/search", nil, token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("empty: %d %s", w.Code, w.Body.String())
+	}
+	var empty map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &empty); err != nil {
+		t.Fatal(err)
+	}
+	if empty["message"] != "输入关键词或选一个过滤条件" {
+		t.Fatalf("empty = %v", empty)
+	}
+
+	w = doJSON(h, http.MethodGet, "/api/knowledge/search?kind=article", nil, token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("kind only: %d %s", w.Code, w.Body.String())
+	}
+	var out struct {
+		Results []struct {
+			ID    string  `json:"id"`
+			Score float64 `json:"score"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Results) == 0 {
+		t.Fatal("kind=article should list")
+	}
+	for _, r := range out.Results {
+		if r.Score != 0 {
+			t.Fatalf("filter-list score should be 0, got %+v", r)
+		}
+	}
+}
+
+func TestAuditUntilRange(t *testing.T) {
+	h, token := pagesHandler(t)
+	old := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	mid := time.Date(2026, 8, 10, 10, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC)
+	h.Audit.Append(audit.Entry{TS: old, Tool: "old", ClientID: "coder", ResultStatus: "success"})
+	h.Audit.Append(audit.Entry{TS: mid, Tool: "mid", ClientID: "coder", ResultStatus: "success"})
+	h.Audit.Append(audit.Entry{TS: now, Tool: "now", ClientID: "coder", ResultStatus: "success"})
+
+	w := doJSON(h, http.MethodGet, "/api/audit/recent?since=2026-08-10T09:00:00Z&until=2026-08-10T11:00:00Z", nil, token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("range: %d %s", w.Code, w.Body.String())
+	}
+	var items []audit.Entry
+	if err := json.Unmarshal(w.Body.Bytes(), &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Tool != "mid" {
+		t.Fatalf("items=%+v", items)
+	}
+
+	w = doJSON(h, http.MethodGet, "/api/audit/recent?since=2026-08-20T00:00:00Z&until=2026-08-01T00:00:00Z", nil, token)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_argument") {
+		t.Fatalf("until < since: %d %s", w.Code, w.Body.String())
+	}
+	w = doJSON(h, http.MethodGet, "/api/audit/recent?until=not-a-date", nil, token)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_argument: until") {
+		t.Fatalf("bad until: %d %s", w.Code, w.Body.String())
 	}
 }

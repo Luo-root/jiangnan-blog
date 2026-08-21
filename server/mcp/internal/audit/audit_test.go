@@ -68,6 +68,25 @@ func TestListFilters(t *testing.T) {
 	}
 }
 
+func TestListUntil(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "audit.sqlite"), 90, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	old := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	mid := time.Date(2026, 8, 10, 10, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC)
+	s.Append(Entry{TS: old, Tool: "old", ClientID: "a", ResultStatus: "success"})
+	s.Append(Entry{TS: mid, Tool: "mid", ClientID: "a", ResultStatus: "success"})
+	s.Append(Entry{TS: now, Tool: "now", ClientID: "a", ResultStatus: "success"})
+
+	got := s.List(Filter{Since: mid.Add(-time.Second), Until: mid.Add(time.Second)})
+	if len(got) != 1 || got[0].Tool != "mid" {
+		t.Fatalf("until window = %+v", got)
+	}
+}
+
 func TestRetentionDeletesOld(t *testing.T) {
 	s, err := Open(filepath.Join(t.TempDir(), "audit.sqlite"), 1, 100)
 	if err != nil {

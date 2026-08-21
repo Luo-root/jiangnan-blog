@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Luo-root/jiangnan-blog/mcp/internal/comment"
 	"gopkg.in/yaml.v3"
 )
 
@@ -50,27 +51,29 @@ func canTransit(from, to Status) bool {
 }
 
 type Item struct {
-	ID        string    `json:"id"`
-	Kind      string    `json:"kind"`
-	Status    Status    `json:"status"`
-	CreatedBy string    `json:"created_by"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Title     string    `json:"title,omitempty"`
-	Content   string    `json:"content"`
-	Tags      []string  `json:"tags,omitempty"`
-	Location  string    `json:"location"`
+	ID        string            `json:"id"`
+	Kind      string            `json:"kind"`
+	Status    Status            `json:"status"`
+	CreatedBy string            `json:"created_by"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
+	Title     string            `json:"title,omitempty"`
+	Content   string            `json:"content"`
+	Tags      []string          `json:"tags,omitempty"`
+	Comments  []comment.Comment `json:"comments"`
+	Location  string            `json:"location"`
 }
 
 type Summary struct {
-	ID          string    `json:"id"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	CreatedBy   string    `json:"created_by"`
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	Summary     string    `json:"summary"`
-	Status      Status    `json:"status"`
+	ID           string    `json:"id"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	CreatedBy    string    `json:"created_by"`
+	Title        string    `json:"title"`
+	Description  string    `json:"description"`
+	Summary      string    `json:"summary"`
+	Status       Status    `json:"status"`
+	CommentCount int       `json:"comment_count"`
 }
 
 type Store struct {
@@ -115,6 +118,7 @@ func (s *Store) Append(createdBy, content, title string, tags []string) (string,
 		Title:     title,
 		Content:   content,
 		Tags:      tags,
+		Comments:  []comment.Comment{},
 		Location:  path,
 	}
 	if err := writeItem(path, item); err != nil {
@@ -123,7 +127,7 @@ func (s *Store) Append(createdBy, content, title string, tags []string) (string,
 	return id, nil
 }
 
-func (s *Store) Update(id string, status Status, content, title string, tags []string) error {
+func (s *Store) Update(id string, status Status, content, title string, tags []string, cmt *comment.Comment) error {
 	if status != "" && !validStatus(status) {
 		return fmt.Errorf("invalid status: %s", status)
 	}
@@ -153,6 +157,9 @@ func (s *Store) Update(id string, status Status, content, title string, tags []s
 	if tags != nil {
 		item.Tags = tags
 	}
+	if cmt != nil {
+		item.Comments = append(comment.Slice(item.Comments), *cmt)
+	}
 	item.UpdatedAt = time.Now()
 	return writeItem(path, *item)
 }
@@ -176,14 +183,15 @@ func (s *Store) List() ([]Summary, error) {
 			title = titleOf(item.Content)
 		}
 		out = append(out, Summary{
-			ID:          item.ID,
-			CreatedAt:   item.CreatedAt,
-			UpdatedAt:   item.UpdatedAt,
-			CreatedBy:   item.CreatedBy,
-			Title:       title,
-			Description: descriptionOf(item.Content),
-			Summary:     summarise(item.Content),
-			Status:      item.Status,
+			ID:           item.ID,
+			CreatedAt:    item.CreatedAt,
+			UpdatedAt:    item.UpdatedAt,
+			CreatedBy:    item.CreatedBy,
+			Title:        title,
+			Description:  descriptionOf(item.Content),
+			Summary:      summarise(item.Content),
+			Status:       item.Status,
+			CommentCount: len(item.Comments),
 		})
 	}
 	return out, nil
@@ -202,18 +210,20 @@ func (s *Store) Get(id string) (*Item, error) {
 	if item.Title == "" {
 		item.Title = titleOf(item.Content)
 	}
+	item.Comments = comment.Slice(item.Comments)
 	return item, nil
 }
 
 type frontmatter struct {
-	ID        string    `yaml:"id"`
-	Kind      string    `yaml:"kind"`
-	Status    Status    `yaml:"status"`
-	CreatedBy string    `yaml:"created_by"`
-	CreatedAt time.Time `yaml:"created_at"`
-	UpdatedAt time.Time `yaml:"updated_at"`
-	Title     string    `yaml:"title,omitempty"`
-	Tags      []string  `yaml:"tags,omitempty"`
+	ID        string            `yaml:"id"`
+	Kind      string            `yaml:"kind"`
+	Status    Status            `yaml:"status"`
+	CreatedBy string            `yaml:"created_by"`
+	CreatedAt time.Time         `yaml:"created_at"`
+	UpdatedAt time.Time         `yaml:"updated_at"`
+	Title     string            `yaml:"title,omitempty"`
+	Tags      []string          `yaml:"tags,omitempty"`
+	Comments  []comment.Comment `yaml:"comments,omitempty"`
 }
 
 func readItem(path string) (*Item, error) {
@@ -240,6 +250,7 @@ func readItem(path string) (*Item, error) {
 		Title:     f.Title,
 		Content:   strings.TrimSpace(body),
 		Tags:      f.Tags,
+		Comments:  comment.Slice(f.Comments),
 		Location:  path,
 	}, nil
 }
@@ -254,6 +265,7 @@ func writeItem(path string, item Item) error {
 		UpdatedAt: item.UpdatedAt,
 		Title:     item.Title,
 		Tags:      item.Tags,
+		Comments:  comment.Slice(item.Comments),
 	}
 	b, err := yaml.Marshal(fm)
 	if err != nil {

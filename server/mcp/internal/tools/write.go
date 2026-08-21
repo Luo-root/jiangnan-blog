@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/apply"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/auth"
+	"github.com/Luo-root/jiangnan-blog/mcp/internal/comment"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/inbox"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/proposal"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/sanitize"
@@ -157,6 +159,7 @@ func (r *depsHolder) handleProposalCreate(ctx context.Context, req mcp.CallToolR
 		"created_by":  created.CreatedBy,
 		"diff":        apply.Preview(created, r.d.VaultRoot),
 		"validation":  created.Validation,
+		"comments":    comment.Slice(created.Comments),
 	}), nil
 }
 
@@ -211,8 +214,88 @@ func (r *depsHolder) handleProposalGet(ctx context.Context, req mcp.CallToolRequ
 	}
 	p, err := r.d.Proposal.Get(id)
 	if err != nil {
-		return errResult("get proposal", err), nil
+		return mcp.NewToolResultError(err.Error()), nil
 	}
+	return r.proposalGetResult(p), nil
+}
+
+type proposalUpdateArgs struct {
+	ID        string `json:"id"`
+	Reason    string `json:"reason"`
+	Target    *proposal.Target
+	Operation *proposal.Operation
+	Payload   *proposal.Payload
+	Comment   *comment.Input `json:"comment"`
+}
+
+func (r *depsHolder) handleProposalUpdate(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	var args proposalUpdateArgs
+	if err := req.BindArguments(&args); err != nil && req.GetString("id", "") == "" {
+		return mcp.NewToolResultError("required field missing"), nil
+	}
+	id := strings.TrimSpace(args.ID)
+	if id == "" {
+		id = req.GetString("id", "")
+	}
+	if id == "" {
+		return mcp.NewToolResultError("required field missing"), nil
+	}
+	raw, _ := req.GetArguments()["target"]
+	if t := objectAs[proposal.Target](raw); t != nil {
+		args.Target = t
+	}
+	raw, _ = req.GetArguments()["operation"]
+	if op := objectAs[proposal.Operation](raw); op != nil {
+		args.Operation = op
+	}
+	raw, _ = req.GetArguments()["payload"]
+	if p := objectAs[proposal.Payload](raw); p != nil {
+		args.Payload = p
+	}
+
+	hasField := args.Reason != "" || args.Target != nil || args.Operation != nil || args.Payload != nil || args.Comment != nil
+	if !hasField {
+		return mcp.NewToolResultError("required field missing"), nil
+	}
+
+	var cmt *comment.Comment
+	if args.Comment != nil {
+		c, err := comment.New("agent", clientID(ctx), *args.Comment)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		cmt = &c
+	}
+	if args.Payload != nil {
+		if args.Payload.Format == "" {
+			args.Payload.Format = "markdown"
+		}
+		if args.Payload.Format != "markdown" {
+			return mcp.NewToolResultError("invalid_argument: payload.format"), nil
+		}
+		if !apply.FenceClosed(args.Payload.Content) {
+			return mcp.NewToolResultError("invalid_markdown_fence"), nil
+		}
+	}
+
+	patch := proposal.ProposalPatch{
+		Target:    args.Target,
+		Operation: args.Operation,
+		Payload:   args.Payload,
+		Comment:   cmt,
+	}
+	if args.Reason != "" {
+		reason := args.Reason
+		patch.Reason = &reason
+	}
+	p, err := r.d.Proposal.Update(id, patch)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return r.proposalGetResult(p), nil
+}
+
+func (r *depsHolder) proposalGetResult(p *proposal.Proposal) *mcp.CallToolResult {
 	result := map[string]any{
 		"id":          p.ID,
 		"kind":        p.Kind,
@@ -228,6 +311,7 @@ func (r *depsHolder) handleProposalGet(ctx context.Context, req mcp.CallToolRequ
 		"payload":    p.Payload,
 		"validation": p.Validation,
 		"diff":       apply.Preview(p, r.d.VaultRoot),
+		"comments":   comment.Slice(p.Comments),
 	}
 	if p.Risk.Level != "" || len(p.Risk.Reasons) > 0 {
 		result["risk"] = p.Risk
@@ -235,7 +319,22 @@ func (r *depsHolder) handleProposalGet(ctx context.Context, req mcp.CallToolRequ
 	if p.Receipt != nil {
 		result["receipt"] = p.Receipt
 	}
-	return jsonResult(result), nil
+	return jsonResult(result)
+}
+
+func objectAs[T any](raw any) *T {
+	if raw == nil {
+		return nil
+	}
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return nil
+	}
+	var out T
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil
+	}
+	return &out
 }
 
 func (r *depsHolder) handleInboxAppend(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -248,27 +347,11 @@ func (r *depsHolder) handleInboxAppend(ctx context.Context, req mcp.CallToolRequ
 	if err != nil {
 		return errResult("inbox append", err), nil
 	}
-	out := map[string]any{
-		"id":      id,
-		"status":  "pending",
-		"content": content,
+	item, err := r.d.Inbox.Get(id)
+	if err != nil {
+		return errResult("inbox get", err), nil
 	}
-	if item, err := r.d.Inbox.Get(id); err == nil {
-		out["created_at"] = item.CreatedAt.Format(time.RFC3339)
-		out["created_by"] = item.CreatedBy
-		if item.Title != "" {
-			out["title"] = item.Title
-		}
-	}
-	if title != "" {
-		if _, ok := out["title"]; !ok {
-			out["title"] = title
-		}
-	}
-	if ws := inboxWarnings(r, content); len(ws) > 0 {
-		out["warnings"] = ws
-	}
-	return jsonResult(out), nil
+	return jsonResult(inboxItemOut(r, item)), nil
 }
 
 func (r *depsHolder) handleInboxUpdate(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -276,10 +359,27 @@ func (r *depsHolder) handleInboxUpdate(ctx context.Context, req mcp.CallToolRequ
 	if id == "" {
 		return mcp.NewToolResultError("required argument id missing"), nil
 	}
+	args := req.GetArguments()
 	status := inbox.Status(req.GetString("status", ""))
 	content := req.GetString("content", "")
 	title := req.GetString("title", "")
-	if err := r.d.Inbox.Update(id, status, content, title, nil); err != nil {
+	var tags []string
+	if raw, ok := args["tags"]; ok {
+		tags = stringSlice(raw)
+	}
+	cmtIn := objectAs[comment.Input](args["comment"])
+	if status == "" && content == "" && title == "" && !okKey(args, "tags") && cmtIn == nil {
+		return mcp.NewToolResultError("required field missing"), nil
+	}
+	var cmt *comment.Comment
+	if cmtIn != nil {
+		c, err := comment.New("agent", clientID(ctx), *cmtIn)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		cmt = &c
+	}
+	if err := r.d.Inbox.Update(id, status, content, title, tags, cmt); err != nil {
 		msg := err.Error()
 		if strings.Contains(msg, "not found") || os.IsNotExist(err) {
 			return mcp.NewToolResultError("inbox not found: " + id), nil
@@ -290,8 +390,29 @@ func (r *depsHolder) handleInboxUpdate(ctx context.Context, req mcp.CallToolRequ
 	if err != nil {
 		return errResult("inbox get", err), nil
 	}
-	out := inboxItemOut(r, item)
-	return jsonResult(out), nil
+	return jsonResult(inboxItemOut(r, item)), nil
+}
+
+func okKey(args map[string]any, key string) bool {
+	_, ok := args[key]
+	return ok
+}
+
+func stringSlice(raw any) []string {
+	switch v := raw.(type) {
+	case []string:
+		return v
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 func (r *depsHolder) handleInboxList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -310,14 +431,15 @@ func (r *depsHolder) handleInboxList(ctx context.Context, req mcp.CallToolReques
 			continue
 		}
 		out = append(out, map[string]any{
-			"id":          it.ID,
-			"created_at":  it.CreatedAt.Format(time.RFC3339),
-			"updated_at":  it.UpdatedAt.Format(time.RFC3339),
-			"created_by":  it.CreatedBy,
-			"title":       it.Title,
-			"description": it.Description,
-			"summary":     it.Summary,
-			"status":      it.Status,
+			"id":            it.ID,
+			"created_at":    it.CreatedAt.Format(time.RFC3339),
+			"updated_at":    it.UpdatedAt.Format(time.RFC3339),
+			"created_by":    it.CreatedBy,
+			"title":         it.Title,
+			"description":   it.Description,
+			"summary":       it.Summary,
+			"status":        it.Status,
+			"comment_count": it.CommentCount,
 		})
 	}
 	return jsonResult(map[string]any{"items": out}), nil
@@ -342,7 +464,14 @@ func inboxItemOut(r *depsHolder, item *inbox.Item) map[string]any {
 		"content":    item.Content,
 		"created_at": item.CreatedAt.Format(time.RFC3339),
 		"created_by": item.CreatedBy,
+		"updated_at": item.UpdatedAt.Format(time.RFC3339),
 		"title":      item.Title,
+		"tags":       item.Tags,
+		"comments":   comment.Slice(item.Comments),
+		"created": map[string]any{
+			"by": item.CreatedBy,
+			"at": item.CreatedAt.Format(time.RFC3339),
+		},
 	}
 	if ws := inboxWarnings(r, item.Content); len(ws) > 0 {
 		out["warnings"] = ws

@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
 import { api } from "../../lib/api";
+import { errText, useToast } from "../../components/toast";
 
 type Hit = {
   id: string;
@@ -29,6 +30,7 @@ const VIS = ["", "public", "private", "secret", "draft"];
 const SORTS = ["score", "recency", "access", "hot"];
 
 export function SearchPage() {
+  const toast = useToast();
   const [q, setQ] = useState("");
   const [kind, setKind] = useState("");
   const [visibility, setVisibility] = useState("");
@@ -37,14 +39,13 @@ export function SearchPage() {
   const [out, setOut] = useState<SearchOut | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [body, setBody] = useState("");
-  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function run(e?: FormEvent) {
     e?.preventDefault();
-    setError("");
     setBusy(true);
-    const params = new URLSearchParams({ q, sort, limit: "20" });
+    const params = new URLSearchParams({ sort, limit: "20" });
+    if (q.trim()) params.set("q", q.trim());
     if (kind) params.set("kind", kind);
     if (visibility) params.set("visibility", visibility);
     if (tag) params.set("tag", tag);
@@ -53,10 +54,21 @@ export function SearchPage() {
       setOpen(null);
       setBody("");
     } catch (err) {
-      setError(String(err));
+      toast.error(errText(err));
     } finally {
       setBusy(false);
     }
+  }
+
+  function clearAll() {
+    setQ("");
+    setKind("");
+    setVisibility("");
+    setTag("");
+    setSort("score");
+    setOut(null);
+    setOpen(null);
+    setBody("");
   }
 
   async function expand(id: string) {
@@ -74,15 +86,14 @@ export function SearchPage() {
 
   return (
     <section className="h-full overflow-auto p-6">
-      <h2 className="text-lg font-semibold">知识搜索</h2>
-      <p className="mt-1 text-xs text-ink-3">后台直扫 notes 表，不过 MCP kind 门禁。管理员能跨 kind 搜。</p>
-      {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
+      <h2 className="text-lg font-semibold text-ink-1">知识搜索</h2>
+      <p className="mt-1 text-xs text-ink-3">关键词可空。kind / visibility / tag 任一有值即可列出。清除清全部条件 + 结果。</p>
 
       <form onSubmit={run} className="mt-4 rounded-xl border border-border bg-card p-4">
         <div className="flex gap-2">
-          <input className="flex-1 rounded-lg border border-border px-3 py-2 text-sm" placeholder="输入关键词" value={q} onChange={(e) => setQ(e.target.value)} />
-          <button disabled={busy || !q.trim()} className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50">搜索</button>
-          <button type="button" className="rounded-lg border border-border px-3 py-2 text-xs" onClick={() => { setQ(""); setOut(null); setOpen(null); }}>清除</button>
+          <input className="flex-1 rounded-lg border border-border px-3 py-2 text-sm" placeholder="输入关键词（可空）" value={q} onChange={(e) => setQ(e.target.value)} />
+          <button disabled={busy} className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50">搜索</button>
+          <button type="button" className="rounded-lg border border-border px-3 py-2 text-xs" onClick={clearAll}>清除</button>
         </div>
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           <label className="flex items-center gap-1">kind
@@ -114,8 +125,8 @@ export function SearchPage() {
 
       {empty ? (
         <div className="mt-4 rounded-xl border border-warning/40 bg-warning/10 p-5">
-          <div className="font-semibold">未查询到相关内容</div>
-          <div className="mt-1 font-mono text-xs text-ink-3">query: {out?.query_echo}</div>
+          <div className="font-semibold text-ink-1">{out?.message || "未查询到相关内容"}</div>
+          {out?.query_echo ? <div className="mt-1 font-mono text-xs text-ink-3">query: {out.query_echo}</div> : null}
           <div className="mt-2 font-mono text-[11px] text-ink-3">执行信号: {(out?.executed_signals || []).join(" / ")}</div>
           <ul className="mt-3 list-disc pl-5 text-sm text-ink-2">
             {(out?.suggestions || []).map((s) => <li key={s}>{s}</li>)}
@@ -128,7 +139,7 @@ export function SearchPage() {
           <article key={h.id} className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center gap-2">
               <span className="font-mono text-[11px] text-ink-4">{i + 1}.</span>
-              <h3 className="text-sm font-semibold">{h.title || h.id}</h3>
+              <h3 className="text-sm font-semibold text-ink-1">{h.title || h.id}</h3>
               <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[10px]">{h.kind}</span>
               <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[10px]">{h.visibility}</span>
             </div>
@@ -137,7 +148,7 @@ export function SearchPage() {
               score {h.score.toFixed(2)} · {(h.matched_fields || []).map((f) => `${f} ${(h.signals?.[f] ?? 0).toFixed(1)}`).join(" / ")}
             </div>
             <p className="mt-2 text-sm text-ink-2">{h.summary || h.excerpt || "无摘要"}</p>
-            <button className="mt-2 text-xs text-primary" onClick={() => expand(h.id).catch((e) => setError(String(e)))}>
+            <button className="mt-2 text-xs text-primary" onClick={() => expand(h.id).catch((e) => toast.error(errText(e)))}>
               {open === h.id ? "收起" : "展开"}
             </button>
             {open === h.id ? (

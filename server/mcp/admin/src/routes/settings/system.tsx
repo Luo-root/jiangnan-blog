@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../../lib/api";
+import { errText, useToast } from "../../components/toast";
 
 type Health = {
   ok: boolean;
@@ -22,26 +23,57 @@ function fmtBytes(n?: number) {
 }
 
 export function SystemPage() {
+  const toast = useToast();
   const [h, setH] = useState<Health | null>(null);
-  const [error, setError] = useState("");
-  async function load() {
-    setError("");
-    try { setH(await api<Health>("/api/system/health")); }
-    catch (e) { setError(String(e)); }
-  }
-  useEffect(() => { load(); }, []);
+  const [checking, setChecking] = useState(false);
+  const [fail, setFail] = useState("");
+  const [sampled, setSampled] = useState("");
+  const [flash, setFlash] = useState(false);
 
+  async function load(manual = false) {
+    setChecking(true);
+    try {
+      const got = await api<Health>("/api/system/health");
+      setH(got);
+      setFail("");
+      setSampled(new Date().toLocaleTimeString());
+      if (manual) {
+        setFlash(true);
+        window.setTimeout(() => setFlash(false), 1600);
+        toast.success("健康检查已更新");
+      }
+    } catch (e) {
+      setFail(errText(e));
+      if (manual) toast.error(errText(e));
+    } finally {
+      setChecking(false);
+    }
+  }
+  useEffect(() => {
+    load();
+    const t = window.setInterval(() => load(), 15000);
+    return () => window.clearInterval(t);
+  }, []);
+
+  const ok = !fail && !!h?.ok;
   return (
     <section className="h-full overflow-auto p-6">
       <div className="flex items-end justify-between">
         <div>
-          <h2 className="text-lg font-semibold">System 健康</h2>
-          <p className="mt-1 text-xs text-ink-3">进程 / 端口 / 磁盘 / SQLite。点刷新看当前值。</p>
+          <h2 className="text-lg font-semibold text-ink-1">System 健康</h2>
+          <p className="mt-1 text-xs text-ink-3">进页开始 15s 轮询，离开停止。灯、采样时间、按钮态三件套。</p>
         </div>
-        <button className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground" onClick={load}>刷新</button>
+        <button disabled={checking} className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50" onClick={() => load(true)}>
+          {checking ? "检查中…" : flash ? "已更新" : "刷新"}
+        </button>
       </div>
-      {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
-      {!h ? <p className="mt-6 text-sm text-ink-4">加载中…</p> : (
+      <div className="mt-4 flex items-center gap-2 text-sm">
+        <span className={`inline-block h-3 w-3 rounded-full ${ok ? "breath-ok" : "breath-bad"}`} />
+        <span className="font-semibold text-ink-1">{ok ? "健康" : "异常"}</span>
+        {fail ? <span className="text-destructive">{fail}</span> : null}
+        {sampled ? <span className="font-mono text-[11px] text-ink-3">采样 {sampled}</span> : null}
+      </div>
+      {!h ? <p className="mt-6 text-sm text-ink-4">{checking ? "检查中…" : "加载中…"}</p> : (
         <>
           <div className="mt-4 grid grid-cols-4 gap-3">
             <Stat label="状态" value={h.ok ? "ok" : "down"} />
@@ -90,7 +122,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="rounded-xl border border-border bg-card p-4">
-      <h3 className="mb-2 text-sm font-semibold">{title}</h3>
+      <h3 className="mb-2 text-sm font-semibold text-ink-1">{title}</h3>
       {children}
     </div>
   );
