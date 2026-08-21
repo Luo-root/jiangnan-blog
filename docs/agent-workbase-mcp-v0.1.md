@@ -401,7 +401,7 @@ CREATE INDEX idx_auth_tokens_status ON auth_tokens(status);
   │  [复制到剪贴板]  [我已保存]                       │
   └──────────────────────────────────────────────────┘
   复制成功 → 按钮文案改成「已复制」，短暂态，不是静默。
-  签发 / 轮换 / 撤销的成功、失败、错误 → **消息弹窗（toast）**，写清原因（重名 / scope 非法），不要页顶错误条，不要只 reload。
+  签发 / 轮换 / 撤销的成功、失败、错误 → **sonner toast（bottom-right）**，写清原因（重名 / scope 非法），不要页顶错误条，不要右上角自写列表，不要只 reload。明文弹窗用 Dialog；轮换 / 撤销二次确认用 AlertDialog，不用 window.confirm。
   ↓
 关弹窗 / 刷新页面 → 列表显示 **active / grace** 的 name + **description** + scopes + status + 创建时间 + last_used_at + use_count
                     **永远不再展示明文**。`revoked` **不进列表**（作废即从界面消失）
@@ -1890,7 +1890,7 @@ knowledge:
 
 ### 21.5 WebUI 后台
 
-**技术栈**：React + Vite + Tailwind + TypeScript（与博客前端共享基础）。
+**技术栈**：React + Vite + Tailwind + TypeScript。交互控件走 **shadcn/ui**（Radix + Tailwind），与博客同源。不要自写 toast / 日期框 / Dialog / Select。详见 §21.5.10。
 
 ```text
 server/mcp/admin/
@@ -1911,18 +1911,18 @@ server/mcp/admin/
 │   │       ├── git.tsx                 # Git 变更
 │   │       └── templates.tsx           # 模板
 │   ├── components/
-│   │   ├── kanban.tsx
-│   │   ├── proposal-card.tsx
-│   │   ├── diff-viewer.tsx             # 红绿对比
-│   │   ├── heatmap.tsx
-│   │   ├── token-list.tsx
-│   │   ├── search-bar.tsx
-│   │   └── result-card.tsx
+│   │   ├── ui/                         # shadcn/ui（从博客同源复制，admin 独立构建）
+│   │   ├── toast.tsx                   # 薄封装 sonner，禁止自写 toast 列表
+│   │   ├── date-time-picker.tsx        # Calendar + Popover + 时分，禁止 datetime-local
+│   │   ├── comments.tsx                # 领域：评论线程
+│   │   ├── markdown.tsx                # 领域：轻量 GFM 预览
+│   │   └── diff-viewer.tsx             # 领域：红绿对比
 │   ├── lib/
 │   │   ├── api.ts                      # 后端 HTTP 客户端
-│   │   └── auth.ts                     # session 管理
-│   └── styles/
-│       └── tokens.css                  # 与博客 src/styles.css 同源
+│   │   ├── auth.ts                     # session 管理
+│   │   ├── utils.ts                    # cn()
+│   │   └── templates.ts
+│   └── styles.css                      # admin skin token + shadcn CSS 变量
 ├── package.json
 ├── vite.config.ts
 └── tsconfig.json
@@ -2083,7 +2083,7 @@ server/mcp/admin/
 | `until` | 上限（含）。空 = 不限终点 |
 | `tool` / `client_id` / `result_status` | 等值过滤 |
 
-webUI 放两个 `datetime-local`，标签写成「从」「到」，**不要**一个无标签的时间控件。值为空就不传该参数。有值才转 RFC3339（按浏览器本地时区）。解析失败 → 页内错误「请输入有效的日期和时间」，**不要**把坏字符串塞给后端再 500。
+webUI 放两个 **日期时间选择器**（shadcn Calendar + Popover + 时分，§21.5.10），标签写成「从」「到」，**不要**一个无标签的时间控件，**不要**原生 `datetime-local`。值为空就不传该参数。有值才转 RFC3339（按浏览器本地时区）。解析失败 → toast「请输入有效的日期和时间」，**不要**把坏字符串塞给后端再 500。
 
 MCP `audit.list_recent` 继续只用 `since`（Agent 常用「从某时起到现在」）。后台多一个 `until`，不强迫 MCP 改默认。
 
@@ -2131,7 +2131,49 @@ MCP `audit.list_recent` 继续只用 `since`（Agent 常用「从某时起到现
 - 必填字段标签带明确标记（「必填」或 `*`），选填写「选填」
 - 主按钮（签发 / 批准 / 保存）实心；危险（撤销 / 拒绝 / 废弃）用破坏色 + 确认
 - 状态用色标，不靠一段灰字
-- 成功 / 失败 / 错误用 **消息弹窗（toast）**，不要做成单页面的页顶错误条。文案写清发生了什么，自动消失；错误可手动关掉
+- 成功 / 失败 / 错误用 **消息弹窗（toast）**，不要做成单页面的页顶错误条。文案写清发生了什么，自动消失；错误可手动关掉。toast 用 sonner，默认 **bottom-right**（在下面，不压左侧导航）；禁止右上角 / 页顶
+
+#### 21.5.10 UI 组件库（不要造轮子）
+
+后台已经能用，但原生 `<input>` / `<select>` / 自写 toast / 自写 modal 看起来像半成品。交互控件用仓库里已经有的 **shadcn/ui**，不要再手写一套，也不要另引 Ant Design / MUI / Naive。
+
+**选 shadcn，不选 Ant Design / MUI**
+
+| 选项 | 结论 |
+|---|---|
+| shadcn/ui + Radix + Tailwind | **用这个。** 博客 `src/components/ui/` 已经有 Calendar / Dialog / Select / Sonner。admin 是独立 Vite 工程，把需要的组件 **复制进** `server/mcp/admin/src/components/ui/`，自己的 `package.json` 装 radix / sonner / react-day-picker / lucide。不从博客 `src/` 跨包 import（两套构建、两套 token 入口） |
+| Ant Design / MUI | **不做。** 自带设计语言，会跟 ink token 打架；后台要明亮专业 skin，不是第二套 Ant 蓝 |
+| 自写 toast / datetime-local / confirm() | **不做。** 日期框、弹层、下拉、确认框都有现成封装 |
+
+**交互控件映射**（页面交互用左边，禁止继续用右边）
+
+| 场景 | 用 | 不用 |
+|---|---|---|
+| 主按钮 / 次按钮 / 危险按钮 | `Button` variant=`default` / `outline` / `destructive` | 手写 `className="rounded-lg bg-primary …"` |
+| 单行输入 / 多行 | `Input` / `Textarea` | 裸 `<input>` / `<textarea>`（登录页也换） |
+| 下拉（kind / visibility / 模板 / 排序） | `Select` | 原生 `<select>` |
+| 多选 scope | `Checkbox` | 原生 checkbox 无 label 样式 |
+| 模态（明文 token、新建待办、详情） | `Dialog` | 自写 `modal.tsx` 遮罩 |
+| 二次确认（轮换 / 撤销 / 批准 / 拒绝） | `AlertDialog` | `window.confirm` |
+| 操作反馈 | **sonner** `toast.success` / `toast.error` | 自写右上角列表；页顶错误条 |
+| 审计「从 / 到」 | `DateTimePicker` = Calendar + Popover + 时分 `Input` | 原生 `datetime-local` |
+| 状态色标 | `Badge` | 手写 `rounded-full bg-*` 当唯一色标实现（语义色仍按 §16.4 / Proposal 状态） |
+| 卡片容器 | `Card` | 可选；看板列可以继续用现有色差容器 |
+| 审计表 | `Table` | 手写 `<table>` 无 sticky/hover |
+| 图标 | lucide-react | 临时 emoji / 纯 CSS 圆点代替可点控件 |
+
+**toast 位置**：默认 **bottom-right**。在下面，不挡左侧导航，也不弹到右上角。成功 / info 约 3–4s 自动关；错误可手动关。登录页 401/429 仍可表单旁提示（未进 ToastProvider 的会话页）。
+
+**日期时间**：两个独立选择器（从 / 到），不是一个无标签控件。日历选日 + 时分输入；空值不传 query；有值 → 浏览器本地时区 RFC3339。坏值停前端，toast「请输入有效的日期和时间」。API 字段仍是 `since` / `until` 字符串，见 `SCHEMA.md §20.1`。
+
+**仍自写（领域，不是轮子）**
+
+- Inbox 四列看板 + HTML5 拖拽（状态机在契约里，没有现成「不可逆四列」）
+- Proposal / Git 红绿 Diff Viewer
+- Inbox 轻量 GFM 预览（admin 不引博客那条 remark/rehype/katex 管线）
+- Comment 线程布局（形状仍是 SCHEMA §12.4）
+
+**依赖边界**：只给 `server/mcp/admin/package.json` 加 shadcn 运行时（`sonner`、`react-day-picker`、`lucide-react`、对应 `@radix-ui/*`、`class-variance-authority`、`clsx`、`tailwind-merge`）。不要把博客的 `react-markdown` / katex / fuse 打进 admin bundle。不要给 Go 加 UI 依赖。
 
 ### 21.6 可扩展性原则
 
@@ -2228,10 +2270,10 @@ git merge-file (text 3-way merge)
 # Admin WebUI
 React 19+
 TypeScript 5+
-Vite 5+
+Vite 7+
 Tailwind CSS 4+
-TanStack Router
-shadcn/ui 风格组件
+shadcn/ui（Radix primitives + sonner + react-day-picker）
+自写路由（admin 体积小，不引 TanStack Router）
 ```
 
 ### 22.2 目录
@@ -2328,18 +2370,19 @@ v0.1 完整验收（**不分版本**）：
 39. `proposal.update`（SCHEMA §12）：`pending` / `conflict` 可改字段并追加评论；`applied` / `rejected` / `approved` 拒绝。详情页先红绿 diff，再折叠表单。终态只读。
 40. Inbox 评论线程（SCHEMA §12.4 共用 Comment）+ 状态不可逆（`reviewing → pending` 非法；终态不能拖回）+ 卡片先预览再编辑。评论不改 status。非法拖拽拒绝并留原列。
 41. 后台知识搜索 `q` 可选；`kind` / `visibility` / `tag` 任一有值即可列出；全空才提示。`[清除]` 清全部条件 + 结果。MCP `query` 仍必填。后台 get 不加 `access_count`。
-42. 后台审计 `GET /api/audit/recent` 支持 `since`–`until` 区间。MCP `audit.list_recent` 只用 `since`。`datetime-local` 转 RFC3339 失败停前端，提示「请输入有效的日期和时间」。
-43. Token 列表渲染 `description`（只列 active / grace；revoked 不展示）。签发 / 轮换明文只弹一次 + 复制成功态；轮换二次确认带 name；撤销确认即作废，不要输入 name。成功 / 失败 / 错误用 toast，不用页顶错误条。
+42. 后台审计 `GET /api/audit/recent` 支持 `since`–`until` 区间。MCP `audit.list_recent` 只用 `since`。日期时间用 shadcn Calendar + Popover + 时分，不用 `datetime-local`。转 RFC3339 失败停前端，toast「请输入有效的日期和时间」。
+43. Token 列表渲染 `description`（只列 active / grace；revoked 不展示）。签发 / 轮换明文只弹一次 + 复制成功态；轮换二次确认带 name；撤销确认即作废，不要输入 name。成功 / 失败 / 错误用 sonner toast（bottom-right），不用页顶错误条、不用右上角自写列表。
 44. System 进页 15s 轮询，离开停止。绿呼吸灯 / 红异常；刷新有「检查中…」+ 采样时间。
 45. Git 左侧线性提交树（不画多分支）；右侧占满剩余宽度。中文路径 UTF-8，不要 octal escape。
 46. 模板 `kind` 三选一 `inbox` / `proposal` / `token`，只预填空字段，不跳过创建确认。
+47. 后台交互控件用 shadcn/ui（Button / Input / Select / Dialog / AlertDialog / Calendar / Table / Badge / sonner）。不引 Ant Design / MUI。不自写 toast 列表、不自写 modal 遮罩、不用 `datetime-local` / `window.confirm`。领域组件（看板拖拽 / Diff / 轻量 Markdown / 评论线程）仍自写。
 ```
 
 ### 23.2 文档验收
 
 ```text
 1. docs/agent-workbase-mcp-v0.1.md 重写完成。
-2. SCHEMA.md 新建完成（含内容格式 + MCP 字段映射 + 审计 + 热度 + 状态机）。20 个工具各有独立小节（§12 = `proposal.update`）。
+2. SCHEMA.md 新建完成（含内容格式 + MCP 字段映射 + 审计 + 热度 + 状态机）。20 个工具各有独立小节（§12 = `proposal.update`）。§20.1 日期控件 = Calendar + Popover；§23.2 后台 UI 控件表。
 3. README 更新项目定位；`server/mcp/README.md` 工具列表为 20，含 `proposal.update`。
 4. 不含真实 VPS IP / 私钥路径。
 5. v0.1 不使用向量数据库说明保留。
@@ -2369,7 +2412,7 @@ v0.1 完整验收（**不分版本**）：
 | startup 与 context 不一致 | startup 仅派生 |
 | 公开仓库误提交部署信息 | env + 占位符 |
 | 视觉规范分裂 | §0.2 内容统一分发 + §3.9 视觉规范统一 |
-| 后台简陋 | §21.5 升级为独立 TS 项目 |
+| 后台简陋 | §21.5 独立 TS 项目 + §21.5.10 shadcn/ui，不造轮子 |
 | 热度算法误判 | 艾宾浩斯曲线 + 实时计算 + 人工可覆盖 |
 | 字段映射不同步 | 文档分层 §0.3 + 双改流程 |
 | 配置文件缺默认值 | 标准 fallback：cfg → const |
@@ -2398,6 +2441,7 @@ v0.1 完整验收（**不分版本**）：
 17. 不分版本（v0.1 = 完整版）。
 18. 不重命名仓库（继续 jiangnan-blog）。
 19. 后台 UX：Inbox 评论 + 先预览再编辑 + 四列色差 + 状态不可逆；Proposal 终态只读 + 先 diff 再表单 + `proposal.update`；审计 since–until；后台搜索 q 可选；Token description / 轮换二次确认 / 撤销即从列表消失 / 明文弹窗；操作反馈用 toast 不用页顶错误条；System 15s 轮询 + 呼吸灯；Git 提交树 + 右侧占满；模板 kind=inbox|proposal|token。
+20. 后台交互控件 = shadcn/ui（与博客同源）。toast = sonner、默认 bottom-right。日期 = Calendar + Popover + 时分，不用 datetime-local。不引 Ant Design / MUI。领域组件（看板 / Diff / 轻量 Markdown / 评论）仍自写。
 ```
 
 ---

@@ -1068,7 +1068,7 @@ abandoned  → 任何状态
 | `client_id` | string | no | - | 客户端过滤 |
 | `result_status` | enum | no | all | `success` / `error` / `unauthorized` / `forbidden` / `all` |
 
-webUI 两个时间控件对应 `since` / `until`。值为空就不传。前端把 `datetime-local` 转 RFC3339；转失败停在前端，提示「请输入有效的日期和时间」，不要把坏字符串交给后端。`until` < `since` → `invalid_argument`。
+webUI 两个时间控件对应 `since` / `until`。值为空就不传。前端用 shadcn **Calendar + Popover + 时分**（设计文档 §21.5.10），**不用**原生 `datetime-local`。选中后按浏览器本地时区转 RFC3339；转失败停在前端，toast「请输入有效的日期和时间」，不要把坏字符串交给后端。`until` < `since` → `invalid_argument`。API 仍只收 RFC3339 字符串，控件选型不改字段名。
 
 ### §20.2 响应元素
 
@@ -1276,7 +1276,7 @@ Token / 审计不进 `notes`：
 CREATE UNIQUE INDEX idx_auth_tokens_active_name ON auth_tokens(name) WHERE status='active';
 ```
 
-`description` 是创建时用户填的说明，**列表接口必须原样返回**；webUI 卡片要渲染这一行，不能只进库。签发 / 轮换的响应里明文 `token` 只出现一次，同时回 `description`。`GET /api/auth_tokens` **不返回** `status=revoked` 的行（撤销 = 作废，界面不再展示；SQLite 行保留，name 可再签发）。签发 / 轮换 / 撤销的页面交互见设计文档 §6.4。
+`description` 是创建时用户填的说明，**列表接口必须原样返回**；webUI 卡片要渲染这一行，不能只进库。签发 / 轮换的响应里明文 `token` 只出现一次，同时回 `description`。`GET /api/auth_tokens` **不返回** `status=revoked` 的行（撤销 = 作废，界面不再展示；SQLite 行保留，name 可再签发）。签发 / 轮换 / 撤销的页面交互见设计文档 §6.4。操作反馈用 **sonner toast，默认 bottom-right**（设计 §21.5.10），不用页顶错误条、不用右上角自写列表。二次确认用 `AlertDialog`，不用 `window.confirm`。明文 token 用 `Dialog`。
 
 ```sql
 -- 主表
@@ -1337,6 +1337,21 @@ backlinks(
 | `token_name` / `description` / `scopes` | — | token | 预填签发表单（name 是建议值，签发时仍要人确认） |
 
 选用模板：只填空字段，已填的不覆盖。没有「选模板就跳过创建确认」。
+
+### §23.2 后台 UI 控件（webUI，不改 API 字段）
+
+后台交互控件 = **shadcn/ui**（与博客 `src/components/ui/` 同源，复制进 `server/mcp/admin/src/components/ui/`）。设计口径在 `docs/agent-workbase-mcp-v0.1.md` §21.5.10。本小节只钉「字段怎么进控件」，不重复视觉。
+
+| 控件 | 对应字段 / 场景 | 禁止 |
+|---|---|---|
+| sonner `Toaster` position=`bottom-right` | 签发 / 保存 / 拖拽拒绝 / 搜索失败 / 审计坏日期 | 自写 toast 列表；右上角；页顶错误条 |
+| `DateTimePicker`（Calendar + Popover + 时分） | 审计 `since` / `until` → RFC3339 | `datetime-local` |
+| `Dialog` | Token 明文一次展示；Inbox 新建 / 详情 | 自写 modal 遮罩 |
+| `AlertDialog` | Token 轮换 / 撤销；Proposal 批准 / 拒绝 | `window.confirm` |
+| `Select` | 搜索 kind / visibility / 排序；模板下拉 | 原生 `<select>` |
+| `Button` / `Input` / `Textarea` / `Checkbox` / `Badge` / `Table` | 表单与列表 | 手写无障碍缺失的裸控件当主交互 |
+
+Go / MCP 工具 schema **不变**。换控件不是换字段。
 
 ---
 
