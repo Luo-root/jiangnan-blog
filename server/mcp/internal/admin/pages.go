@@ -109,7 +109,10 @@ func (h *Handler) searchKnowledge(w http.ResponseWriter, r *http.Request) {
 				Visibility: doc.Visibility,
 				Summary:    doc.Summary,
 				Score:      0,
-				Signals:    map[string]float64{},
+				Signals: map[string]float64{
+					"access":  search.Access(doc.AccessCount, doc.LastAccess, now, h.HalfLifeDays, 1),
+					"recency": search.Recency(doc.UpdatedAt, now, 1),
+				},
 			})
 			continue
 		}

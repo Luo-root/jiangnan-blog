@@ -62,8 +62,8 @@ export function SystemPage() {
     <section className="h-full overflow-auto p-6">
       <div className="flex items-end justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-ink-1">System 健康</h2>
-          <p className="mt-1 text-xs text-ink-3">进页开始 15s 轮询，离开停止。灯、采样时间、按钮态三件套。</p>
+          <h2 className="text-xl font-bold text-ink-1">System 健康</h2>
+          <p className="mt-1 text-sm text-ink-3">进页开始 15s 轮询，离开停止。灯、采样时间、按钮态三件套。</p>
         </div>
         <Button size="sm" disabled={checking} onClick={() => load(true)}>
           {checking ? "检查中…" : flash ? "已更新" : "刷新"}

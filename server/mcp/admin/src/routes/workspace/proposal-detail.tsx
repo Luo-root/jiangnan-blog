@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { PROPOSAL_BADGE } from "../../lib/status";
 
 type Proposal = {
   id: string;
@@ -24,13 +25,7 @@ type Proposal = {
   receipt?: { status?: string; commit?: string; conflict_regions?: { excerpt?: string }[] };
 };
 
-const STATUS_CLS: Record<string, string> = {
-  pending: "bg-ink-3/20 text-ink-1",
-  conflict: "bg-warning/20 text-warning",
-  approved: "bg-primary/15 text-primary",
-  applied: "bg-accent/20 text-accent",
-  rejected: "bg-destructive/15 text-destructive",
-};
+
 
 export function ProposalDetailPage({ id }: { id: string }) {
   const toast = useToast();
@@ -101,7 +96,7 @@ export function ProposalDetailPage({ id }: { id: string }) {
       <Button variant="ghost" size="sm" className="px-0 text-ink-3" onClick={() => navigate("/workspace/proposal")}>← 返回列表</Button>
       <div className="mt-3 flex items-center gap-2">
         <h2 className="font-mono text-lg font-semibold text-ink-1">{p.id}</h2>
-        <Badge className={STATUS_CLS[p.status] || ""}>{p.status}</Badge>
+        <Badge className={PROPOSAL_BADGE[p.status] || ""}>{p.status}</Badge>
       </div>
       <p className="mt-2 font-mono text-[11px] text-ink-3">{p.created_by} · {p.created_at} · base {p.base_commit || "—"}</p>
       {terminal ? <p className="mt-2 text-xs text-ink-3">终态只读。要再改请开一条新 proposal。</p> : null}

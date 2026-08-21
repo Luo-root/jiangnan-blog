@@ -26,8 +26,8 @@ export function GitPage() {
   return (
     <section className="flex h-full overflow-hidden">
       <div className="w-72 shrink-0 overflow-auto border-r border-border p-4">
-        <h2 className="text-lg font-semibold text-ink-1">Git 变更</h2>
-        <p className="mt-1 text-xs text-ink-3">线性 HEAD 历史。点一条看 diff。</p>
+        <h2 className="text-xl font-bold text-ink-1">Git 变更</h2>
+        <p className="mt-1 text-sm text-ink-3">线性 HEAD 历史。点一条看 diff。</p>
         <div className="relative mt-4 ml-2">
           <div className="absolute bottom-2 left-[5px] top-2 w-px bg-border" />
           <div className="space-y-1">
@@ -49,18 +49,18 @@ export function GitPage() {
           </div>
         </div>
       </div>
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden p-4">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-4">
         {sha && meta ? (
           <>
-            <div className="mb-3">
-              <div className="font-semibold text-ink-1">{meta.subject}</div>
-              <div className="mt-1 font-mono text-[11px] text-ink-3">{meta.sha} · {meta.author} · {meta.date}</div>
+            <div className="mb-3 shrink-0">
+              <div className="text-base font-bold text-ink-1">{meta.subject}</div>
+              <div className="mt-1 font-mono text-[12px] text-ink-3">{meta.sha} · {meta.author} · {meta.date}</div>
             </div>
-            <div className="min-h-0 flex-1 overflow-auto">
+            <div className="min-h-0 flex-1">
               <UnifiedDiff text={diff} />
             </div>
           </>
-        ) : <p className="text-sm text-ink-4">选一条提交看 diff</p>}
+        ) : <p className="text-sm font-medium text-ink-4">选一条提交看 diff</p>}
       </div>
     </section>
   );

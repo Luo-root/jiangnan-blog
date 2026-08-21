@@ -1,7 +1,8 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import { errText, useToast } from "../../components/toast";
-import { DateTimePicker, dateToRFC3339 } from "../../components/date-time-picker";
+import { DateRangePicker, dateToRFC3339 } from "../../components/date-time-picker";
+import { AUDIT_BADGE } from "../../lib/status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -53,13 +54,12 @@ export function AuditPage() {
 
   return (
     <section className="flex h-full flex-col p-6">
-      <h2 className="text-lg font-semibold text-ink-1">审计日志</h2>
-      <p className="mt-1 text-xs text-ink-3">最小字段集。不展示 token / args 原文。按 client / tool / since–until 过滤。</p>
+      <h2 className="text-xl font-bold text-ink-1">审计日志</h2>
+      <p className="mt-1 text-sm text-ink-3">最小字段集。不展示 token / args 原文。日期用范围选择器。</p>
       <form onSubmit={load} className="mt-4 flex flex-wrap items-center gap-2">
-        <Input className="h-8 w-40 font-mono text-xs" placeholder="tool" value={tool} onChange={(e) => setTool(e.target.value)} />
-        <Input className="h-8 w-40 font-mono text-xs" placeholder="client_id" value={client} onChange={(e) => setClient(e.target.value)} />
-        <DateTimePicker label="从" value={since} onChange={setSince} />
-        <DateTimePicker label="到" value={until} onChange={setUntil} />
+        <Input className="h-9 w-40 font-mono text-sm" placeholder="tool" value={tool} onChange={(e) => setTool(e.target.value)} />
+        <Input className="h-9 w-40 font-mono text-sm" placeholder="client_id" value={client} onChange={(e) => setClient(e.target.value)} />
+        <DateRangePicker from={since} to={until} onChange={(a, b) => { setSince(a); setUntil(b); }} />
         <Button type="submit" size="sm">刷新</Button>
       </form>
       <div className="mt-4 min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card">
@@ -79,11 +79,11 @@ export function AuditPage() {
               <TableRow><TableCell className="py-8 text-center text-ink-4" colSpan={6}>暂无记录</TableCell></TableRow>
             ) : rows.map((e, i) => (
               <TableRow key={i}>
-                <TableCell className="font-mono text-[11px] whitespace-nowrap">{(e.ts || "").replace("T", " ").slice(0, 19)}</TableCell>
-                <TableCell className="font-mono">{e.tool}</TableCell>
+                <TableCell className="font-mono text-[12px] whitespace-nowrap">{(e.ts || "").replace("T", " ").slice(0, 19)}</TableCell>
+                <TableCell className="font-mono font-medium">{e.tool}</TableCell>
                 <TableCell className="font-mono text-ink-3">{e.client_id || "—"}</TableCell>
                 <TableCell>
-                  <Badge variant={e.result_status === "success" ? "secondary" : "destructive"}>{e.result_status}</Badge>
+                  <Badge className={AUDIT_BADGE[e.result_status] || ""}>{e.result_status}</Badge>
                 </TableCell>
                 <TableCell className="font-mono">{e.duration_ms}</TableCell>
                 <TableCell className="max-w-[180px] truncate font-mono text-ink-4" title={e.args_digest}>{e.args_digest || "—"}</TableCell>

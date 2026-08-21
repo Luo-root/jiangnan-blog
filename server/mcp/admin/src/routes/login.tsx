@@ -37,11 +37,11 @@ export function LoginPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit}>
-            <Label className="block text-xs">
+            <Label className="block text-sm font-medium">
               用户
               <Input className="mt-1.5" value={user} autoComplete="username" onChange={(e) => setUser(e.target.value)} />
             </Label>
-            <Label className="mt-4 block text-xs">
+            <Label className="mt-4 block text-sm font-medium">
               口令
               <Input type="password" className="mt-1.5" value={password} autoComplete="current-password" onChange={(e) => setPassword(e.target.value)} />
             </Label>

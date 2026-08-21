@@ -16,8 +16,8 @@ export function AccessPage() {
   const sum = list.reduce((n, x) => n + (x.count || 0), 0);
   return (
     <section className="h-full overflow-auto p-6">
-      <h2 className="text-lg font-semibold text-ink-1">访问热度</h2>
-      <p className="mt-1 text-xs text-ink-3">score = count × exp(-days / half_life)。条按 score，不是 count。只统计 MCP get。</p>
+      <h2 className="text-xl font-bold text-ink-1">访问热度</h2>
+      <p className="mt-1 text-sm text-ink-3">score = count × exp(-days / half_life)。条按 score，不是 count。只统计 MCP get。</p>
       <div className="mt-4 grid grid-cols-3 gap-3">
         <Stat label="上榜资源" value={String(list.length)} />
         <Stat label="最高 score" value={max ? max.toFixed(3) : "0"} />

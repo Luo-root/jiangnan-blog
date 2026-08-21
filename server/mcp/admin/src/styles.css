@@ -6,31 +6,31 @@
   --font-sans: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, "SF Mono", Menlo, monospace;
 
-  --ink-1: #2a353b;
-  --ink-2: #4a5961;
-  --ink-3: #6b7a82;
-  --ink-4: #8b9ba3;
-  --ink-5: #b7c3c9;
-  --background: #f6f8f5;
-  --foreground: #2a353b;
+  --ink-1: #152028;
+  --ink-2: #334048;
+  --ink-3: #4d5d66;
+  --ink-4: #6b7c85;
+  --ink-5: #9aadb6;
+  --background: #f4f7fb;
+  --foreground: #152028;
   --card: #ffffff;
-  --card-foreground: #2a353b;
+  --card-foreground: #152028;
   --popover: #ffffff;
-  --popover-foreground: #2a353b;
-  --primary: #2b7ca6;
-  --primary-foreground: #f6f8f5;
-  --secondary: #edf2f1;
-  --secondary-foreground: #2a353b;
-  --accent: #33916c;
-  --accent-foreground: #f6f8f5;
-  --destructive: #c5392b;
-  --destructive-foreground: #f6f8f5;
-  --border: #d8e1e3;
-  --input: #d8e1e3;
-  --ring: #2b7ca6;
-  --muted: #edf2f1;
-  --muted-foreground: #6b7a82;
-  --warning: #c07828;
+  --popover-foreground: #152028;
+  --primary: #1677ff;
+  --primary-foreground: #ffffff;
+  --secondary: #e8eef4;
+  --secondary-foreground: #152028;
+  --accent: #16a34a;
+  --accent-foreground: #ffffff;
+  --destructive: #e11d48;
+  --destructive-foreground: #ffffff;
+  --border: #c5d0d8;
+  --input: #c5d0d8;
+  --ring: #1677ff;
+  --muted: #e8eef4;
+  --muted-foreground: #4d5d66;
+  --warning: #d97706;
 }
 
 @theme inline {
@@ -81,7 +81,9 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
+  font-weight: 500;
   -webkit-font-smoothing: antialiased;
 }
-button, input, textarea, select { font: inherit; }
+h1, h2, h3, h4 { font-weight: 700; letter-spacing: -0.01em; }
+button, input, textarea, select { font: inherit; font-weight: 500; }
 button { cursor: pointer; }

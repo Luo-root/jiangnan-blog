@@ -29,10 +29,10 @@ type Detail = Item & {
 };
 
 const COLS = [
-  { status: "pending", name: "待处理", bar: "bg-ink-3", wrap: "border-ink-5 bg-muted/40" },
-  { status: "reviewing", name: "待审核", bar: "bg-warning", wrap: "border-warning/40 bg-warning/5" },
-  { status: "done", name: "已完成", bar: "bg-accent", wrap: "border-accent/40 bg-accent/5" },
-  { status: "abandoned", name: "已废弃", bar: "bg-ink-5", wrap: "border-border bg-muted/20" },
+  { status: "pending", name: "待处理", bar: "bg-slate-600", wrap: "border-slate-300 bg-slate-50" },
+  { status: "reviewing", name: "待审核", bar: "bg-amber-500", wrap: "border-amber-400 bg-amber-50" },
+  { status: "done", name: "已完成", bar: "bg-emerald-600", wrap: "border-emerald-400 bg-emerald-50" },
+  { status: "abandoned", name: "已废弃", bar: "bg-zinc-400", wrap: "border-zinc-300 bg-zinc-100" },
 ];
 
 const LEGAL: Record<string, string[]> = {
@@ -86,8 +86,8 @@ export function InboxPage() {
     <section className="flex h-full flex-col p-6">
       <div className="mb-4 flex items-end justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-ink-1">待办看板</h2>
-          <p className="mt-1 text-xs text-ink-3">拖卡片换状态。非法拖拽会拒绝。终态仍可改正文和评论。</p>
+          <h2 className="text-xl font-bold text-ink-1">待办看板</h2>
+          <p className="mt-1 text-sm text-ink-3">拖卡片换状态。非法拖拽会拒绝。终态仍可改正文和评论。</p>
         </div>
         <Button size="sm" onClick={() => { setCreating(true); setDraft({ title: "", content: "", tags: "" }); setTplId(""); }}>
           + 新建待办
@@ -190,12 +190,17 @@ export function InboxPage() {
               onValue={(id) => {
                 setTplId(id);
                 const t = tpls.find((x) => x.id === id);
-                if (!t) return;
-                setDraft((cur) => fillEmpty(cur, {
-                  title: t.title || "",
+                if (!t) {
+                  toast.info("未选用模板");
+                  return;
+                }
+                const { next, filled } = fillEmpty(draft, {
+                  title: t.title || t.name || "",
                   content: t.content || "",
                   tags: (t.tags || []).join(", "),
-                }));
+                });
+                setDraft(next);
+                toast.success(filled.length ? `已填入：${filled.join("、")}` : "表单已有内容，空字段才用模板填");
               }}
               items={[{ value: "", label: "不使用模板" }, ...tpls.map((t) => ({ value: t.id, label: t.name }))]}
             />
