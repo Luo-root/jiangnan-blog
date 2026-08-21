@@ -85,6 +85,7 @@ func TestNewAdminAPIsRequireSession(t *testing.T) {
 		"/api/system/health",
 		"/api/git/history",
 		"/api/templates",
+		"/api/agent-prompt",
 	} {
 		w := doJSON(h, http.MethodGet, path, nil, "")
 		if w.Code != http.StatusUnauthorized {
@@ -378,5 +379,45 @@ func TestAuditUntilRange(t *testing.T) {
 	w = doJSON(h, http.MethodGet, "/api/audit/recent?until=not-a-date", nil, token)
 	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_argument: until") {
 		t.Fatalf("bad until: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAgentPromptCopy(t *testing.T) {
+	h, token := pagesHandler(t)
+	writeVaultFile(t, h.VaultRoot, "Workbase/mcps/jiangnan-workbase.md", `---
+id: jiangnan-workbase
+kind: mcp_server
+name: Jiangnan Workbase MCP
+summary: 私密个人 Agent 工作基座。
+visibility: private
+---
+
+# Jiangnan Workbase MCP
+
+## Purpose
+
+以 Obsidian Vault 为事实源。
+
+## Security
+
+- 挡未授权的是 token + scope + visibility
+
+## Source
+
+https://github.com/Luo-root/jiangnan-blog-agent-workbase
+`)
+	h.WorkbaseRoot = filepath.Join(h.VaultRoot, "Workbase")
+	w := doJSON(h, http.MethodGet, "/api/agent-prompt", nil, token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("prompt: %d %s", w.Code, w.Body.String())
+	}
+	var out struct {
+		Prompt string `json:"prompt"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.Prompt, "# Jiangnan Workbase MCP") || !strings.Contains(out.Prompt, "workbase.identity") {
+		t.Fatalf("prompt = %s", out.Prompt)
 	}
 }

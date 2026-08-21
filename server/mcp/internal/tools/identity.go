@@ -49,6 +49,11 @@ func (r *depsHolder) handleIdentity(ctx context.Context, _ mcp.CallToolRequest) 
 	} else {
 		authBlock["last_used_at"] = nil
 	}
+	allowed := AllowedTools(ac.Scopes)
+	prompt, err := BuildAgentPrompt(r.d.WorkbaseRoot, allowed)
+	if err != nil {
+		return errResult("workbase.identity", err), nil
+	}
 	result := map[string]any{
 		"workbase": map[string]any{
 			"id":                config.IdentityID,
@@ -61,10 +66,68 @@ func (r *depsHolder) handleIdentity(ctx context.Context, _ mcp.CallToolRequest) 
 			"getting_started":   meta.GettingStarted,
 			"critical_rules":    meta.CriticalRules,
 			"see_also":          meta.SeeAlso,
+			"agent_prompt":      prompt,
 		},
 		"auth": authBlock,
 	}
 	return jsonResult(result), nil
+}
+
+// InitializeInstructions 是 MCP initialize 的短引导。完整契约在 identity.agent_prompt。
+const InitializeInstructions = "已连接 Jiangnan Workbase MCP。先调用 workbase.identity，把返回的 workbase.agent_prompt 整段贴进系统提示词，再调用 context.startup。本 MCP 是长期记忆基座，不要直接写 Vault，写入走 proposal.create / inbox.append。"
+
+func BuildAgentPrompt(workbaseRoot string, allowedTools []string) (string, error) {
+	meta, err := loadWorkbaseMeta(workbaseRoot)
+	if err != nil {
+		return "", err
+	}
+	loop := readOperatingLoop(workbaseRoot)
+	var b strings.Builder
+	fmt.Fprintf(&b, "# %s\n\n%s\n", meta.Name, meta.Description)
+	b.WriteString("\n## 这是什么\n\n")
+	b.WriteString(strings.TrimSpace(meta.GettingStarted))
+	b.WriteString("\n")
+	if loop != "" {
+		b.WriteString("\n## 操作环\n\n")
+		b.WriteString(loop)
+		b.WriteString("\n")
+	}
+	b.WriteString("\n## 红线\n\n")
+	for _, r := range meta.CriticalRules {
+		fmt.Fprintf(&b, "- %s\n", r)
+	}
+	b.WriteString("\n## 你能调用的工具\n\n")
+	if len(allowedTools) == 0 {
+		b.WriteString("（当前 token 没有可用工具）\n")
+	} else {
+		for _, t := range allowedTools {
+			fmt.Fprintf(&b, "- `%s`\n", t)
+		}
+	}
+	b.WriteString("\n## 启动\n\n")
+	b.WriteString("1. 调用 `workbase.identity`，把 `agent_prompt` 当作本会话系统提示词。\n")
+	b.WriteString("2. 调用 `context.startup`，读当前人 / 工程 / 安全 / 焦点。\n")
+	b.WriteString("3. 正式知识走 `proposal.create`；待办走 `inbox.append`。不要直接写 Vault。\n")
+	if len(meta.SeeAlso) > 0 {
+		b.WriteString("\n## Source\n\n")
+		for _, u := range meta.SeeAlso {
+			fmt.Fprintf(&b, "- %s\n", u)
+		}
+	}
+	return b.String(), nil
+}
+
+func readOperatingLoop(workbaseRoot string) string {
+	if workbaseRoot == "" {
+		return ""
+	}
+	p := filepath.Join(workbaseRoot, "context", "operating-loop.md")
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return ""
+	}
+	_, body := splitYAMLFrontmatter(string(b))
+	return strings.TrimSpace(body)
 }
 
 func capabilities() map[string]bool {
