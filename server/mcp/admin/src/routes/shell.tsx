@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { loadSession } from "../lib/auth";
 import { logout } from "../lib/api";
 import { navigate } from "../lib/nav";
+import { Button } from "@/components/ui/button";
 import { InboxPage } from "./workspace/inbox";
 import { ProposalsPage } from "./workspace/proposals";
 import { ProposalDetailPage } from "./workspace/proposal-detail";
@@ -59,25 +60,28 @@ export function Shell({ path }: { path: string }) {
             {g.items.map((it) => {
               const active = path === it.href || (it.href === "/workspace/proposal" && path.startsWith("/workspace/proposal/"));
               return (
-                <button
+                <Button
                   key={it.href}
+                  variant={active ? "secondary" : "ghost"}
+                  className={`mb-0.5 w-full justify-start ${active ? "font-semibold text-primary" : "text-ink-2"}`}
                   onClick={() => navigate(it.href)}
-                  className={`mb-0.5 flex w-full rounded-lg px-3 py-2 text-left text-[13px] ${active ? "bg-primary/10 font-semibold text-primary" : "text-ink-2 hover:bg-muted"}`}
                 >
                   {it.label}
-                </button>
+                </Button>
               );
             })}
           </nav>
         ))}
         <div className="mt-auto px-2 pt-4 text-[11px] text-ink-4">
           <div className="font-mono">{user}</div>
-          <button
-            className="mt-2 text-ink-3 underline-offset-2 hover:text-destructive hover:underline"
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-2 px-0 text-ink-3 hover:text-destructive"
             onClick={async () => { await logout(); location.assign("/login"); }}
           >
             退出
-          </button>
+          </Button>
         </div>
       </aside>
       <main className="min-w-0 flex-1 overflow-hidden bg-background">{page}</main>

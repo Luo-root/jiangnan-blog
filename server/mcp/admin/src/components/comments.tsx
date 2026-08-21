@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { errText, useToast } from "./toast";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 
 export type Comment = {
   id: string;
@@ -27,7 +30,7 @@ export function CommentThread({ comments, onAppend, readOnly }: {
         {list.map((c) => (
           <div key={c.id} className="rounded-lg border border-border bg-muted/40 p-3">
             <div className="flex items-center gap-2 font-mono text-[10px] text-ink-3">
-              <span className="rounded-full bg-card px-1.5 py-0.5">{c.author_type}</span>
+              <Badge variant="secondary">{c.author_type}</Badge>
               <span>{c.author}</span>
               <span>{(c.at || "").replace("T", " ").slice(0, 19)}</span>
             </div>
@@ -37,16 +40,16 @@ export function CommentThread({ comments, onAppend, readOnly }: {
       </div>
       {readOnly || !onAppend ? null : (
         <div className="mt-3">
-          <textarea
-            className="min-h-20 w-full rounded-lg border border-border p-2 text-sm"
+          <Textarea
+            className="min-h-20"
             placeholder="追加评论。评论不改状态。"
             value={body}
             onChange={(e) => setBody(e.target.value)}
           />
           <div className="mt-2 flex justify-end">
-            <button
+            <Button
+              size="sm"
               disabled={busy || !body.trim()}
-              className="rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground disabled:opacity-50"
               onClick={async () => {
                 setBusy(true);
                 try {
@@ -58,7 +61,7 @@ export function CommentThread({ comments, onAppend, readOnly }: {
                   setBusy(false);
                 }
               }}
-            >发送评论</button>
+            >发送评论</Button>
           </div>
         </div>
       )}

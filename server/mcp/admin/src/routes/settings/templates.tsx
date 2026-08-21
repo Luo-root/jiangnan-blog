@@ -1,6 +1,11 @@
 import { FormEvent, useEffect, useState, type ReactNode } from "react";
 import { api } from "../../lib/api";
 import { errText, useToast } from "../../components/toast";
+import { SimpleSelect } from "../../components/simple-select";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const SCOPES = [
   "read:context", "read:knowledge", "read:project", "read:registry",
@@ -64,47 +69,53 @@ export function TemplatesPage() {
       <div className="w-72 shrink-0 overflow-auto border-r border-border p-4">
         <h2 className="text-lg font-semibold text-ink-1">模板</h2>
         <p className="mt-1 text-xs text-ink-3">kind 三选一。只预填空字段，不跳过创建确认。</p>
-        <button
-          className="mt-3 w-full rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"
-          onClick={() => setCur(empty())}
-        >+ 新建</button>
+        <Button className="mt-3 w-full" size="sm" onClick={() => setCur(empty())}>+ 新建</Button>
         <div className="mt-3 space-y-1">
           {list.map((t) => (
-            <button key={t.id} onClick={() => setCur({ ...empty(), ...t })} className={`block w-full rounded-lg border px-3 py-2 text-left ${cur.id === t.id ? "border-primary bg-primary/10" : "border-border bg-card"}`}>
-              <div className="truncate text-sm text-ink-1">{t.name}</div>
-              <div className="font-mono text-[10px] text-ink-4">{t.kind} · {t.operation || t.title || "—"}</div>
-            </button>
+            <Button
+              key={t.id}
+              variant={cur.id === t.id ? "secondary" : "outline"}
+              className="h-auto w-full flex-col items-start py-2"
+              onClick={() => setCur({ ...empty(), ...t })}
+            >
+              <span className="truncate text-sm text-ink-1">{t.name}</span>
+              <span className="font-mono text-[10px] text-ink-4">{t.kind} · {t.operation || t.title || "—"}</span>
+            </Button>
           ))}
         </div>
       </div>
       <form onSubmit={onSave} className="min-w-0 flex-1 overflow-auto p-6">
         <div className="grid grid-cols-2 gap-3">
           <Field label="kind *">
-            <select className="w-full rounded-lg border border-border px-3 py-2 text-sm" value={cur.kind} onChange={(e) => setCur({ ...cur, kind: e.target.value })}>
-              <option value="inbox">inbox</option>
-              <option value="proposal">proposal</option>
-              <option value="token">token</option>
-            </select>
+            <SimpleSelect
+              value={cur.kind}
+              onValue={(v) => setCur({ ...cur, kind: v || "proposal" })}
+              items={[
+                { value: "inbox", label: "inbox" },
+                { value: "proposal", label: "proposal" },
+                { value: "token", label: "token" },
+              ]}
+            />
           </Field>
-          <Field label="名称 *"><input className="w-full rounded-lg border border-border px-3 py-2 text-sm" value={cur.name} onChange={(e) => setCur({ ...cur, name: e.target.value })} required /></Field>
-          <Field label="ID"><input className="w-full rounded-lg border border-border px-3 py-2 font-mono text-sm" value={cur.id} onChange={(e) => setCur({ ...cur, id: e.target.value })} placeholder="空则按名称生成" /></Field>
+          <Field label="名称 *"><Input value={cur.name} onChange={(e) => setCur({ ...cur, name: e.target.value })} required /></Field>
+          <Field label="ID"><Input className="font-mono" value={cur.id} onChange={(e) => setCur({ ...cur, id: e.target.value })} placeholder="空则按名称生成" /></Field>
         </div>
 
         {cur.kind === "proposal" ? (
           <>
             <div className="mt-3 grid grid-cols-2 gap-3">
-              <Field label="target.type"><input className="w-full rounded-lg border border-border px-3 py-2 font-mono text-sm" value={cur.target_type} onChange={(e) => setCur({ ...cur, target_type: e.target.value })} /></Field>
-              <Field label="operation"><input className="w-full rounded-lg border border-border px-3 py-2 font-mono text-sm" value={cur.operation} onChange={(e) => setCur({ ...cur, operation: e.target.value })} /></Field>
+              <Field label="target.type"><Input className="font-mono" value={cur.target_type} onChange={(e) => setCur({ ...cur, target_type: e.target.value })} /></Field>
+              <Field label="operation"><Input className="font-mono" value={cur.operation} onChange={(e) => setCur({ ...cur, operation: e.target.value })} /></Field>
             </div>
-            <Field label="原因"><input className="mt-3 w-full rounded-lg border border-border px-3 py-2 text-sm" value={cur.reason} onChange={(e) => setCur({ ...cur, reason: e.target.value })} /></Field>
-            <Field label="section"><input className="mt-3 w-full rounded-lg border border-border px-3 py-2 font-mono text-sm" value={cur.section || ""} onChange={(e) => setCur({ ...cur, section: e.target.value })} /></Field>
+            <Field label="原因"><Input className="mt-3" value={cur.reason} onChange={(e) => setCur({ ...cur, reason: e.target.value })} /></Field>
+            <Field label="section"><Input className="mt-3 font-mono" value={cur.section || ""} onChange={(e) => setCur({ ...cur, section: e.target.value })} /></Field>
             <Field label="payload">
-              <textarea className="mt-1 min-h-40 w-full rounded-lg border border-border px-3 py-2 font-mono text-sm" value={cur.payload} onChange={(e) => setCur({ ...cur, payload: e.target.value })} />
+              <Textarea className="mt-1 min-h-40 font-mono" value={cur.payload} onChange={(e) => setCur({ ...cur, payload: e.target.value })} />
             </Field>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 flex flex-wrap gap-3">
               {SCOPES.map((s) => (
-                <label key={s} className="flex items-center gap-1 font-mono text-[11px]">
-                  <input type="checkbox" checked={(cur.scopes || []).includes(s)} onChange={() => toggle(s)} />
+                <label key={s} className="flex items-center gap-2 font-mono text-[11px]">
+                  <Checkbox checked={(cur.scopes || []).includes(s)} onCheckedChange={() => toggle(s)} />
                   {s}
                 </label>
               ))}
@@ -114,21 +125,21 @@ export function TemplatesPage() {
 
         {cur.kind === "inbox" ? (
           <>
-            <Field label="title"><input className="mt-3 w-full rounded-lg border border-border px-3 py-2 text-sm" value={cur.title || ""} onChange={(e) => setCur({ ...cur, title: e.target.value })} /></Field>
+            <Field label="title"><Input className="mt-3" value={cur.title || ""} onChange={(e) => setCur({ ...cur, title: e.target.value })} /></Field>
             <Field label="content">
-              <textarea className="mt-1 min-h-40 w-full rounded-lg border border-border px-3 py-2 text-sm" value={cur.content || ""} onChange={(e) => setCur({ ...cur, content: e.target.value })} />
+              <Textarea className="mt-1 min-h-40" value={cur.content || ""} onChange={(e) => setCur({ ...cur, content: e.target.value })} />
             </Field>
-            <Field label="tags"><input className="mt-3 w-full rounded-lg border border-border px-3 py-2 text-sm" value={(cur.tags || []).join(", ")} onChange={(e) => setCur({ ...cur, tags: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })} placeholder="逗号分隔" /></Field>
+            <Field label="tags"><Input className="mt-3" value={(cur.tags || []).join(", ")} onChange={(e) => setCur({ ...cur, tags: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })} placeholder="逗号分隔" /></Field>
           </>
         ) : null}
 
         {cur.kind === "token" ? (
           <>
-            <Field label="description"><input className="mt-3 w-full rounded-lg border border-border px-3 py-2 text-sm" value={cur.description || ""} onChange={(e) => setCur({ ...cur, description: e.target.value })} /></Field>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <Field label="description"><Input className="mt-3" value={cur.description || ""} onChange={(e) => setCur({ ...cur, description: e.target.value })} /></Field>
+            <div className="mt-3 flex flex-wrap gap-3">
               {SCOPES.map((s) => (
-                <label key={s} className="flex items-center gap-1 font-mono text-[11px]">
-                  <input type="checkbox" checked={(cur.scopes || []).includes(s)} onChange={() => toggle(s)} />
+                <label key={s} className="flex items-center gap-2 font-mono text-[11px]">
+                  <Checkbox checked={(cur.scopes || []).includes(s)} onCheckedChange={() => toggle(s)} />
                   {s}
                 </label>
               ))}
@@ -136,7 +147,7 @@ export function TemplatesPage() {
           </>
         ) : null}
 
-        <button className="mt-4 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">保存</button>
+        <Button type="submit" size="sm" className="mt-4">保存</Button>
       </form>
     </section>
   );

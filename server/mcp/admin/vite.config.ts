@@ -8,6 +8,11 @@ const root = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      "@": resolve(root, "src"),
+    },
+  },
   base: "/",
   build: {
     outDir: resolve(root, "../internal/admin/static"),
