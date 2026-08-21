@@ -163,4 +163,4 @@ MCP Server（server/mcp/）         = Agent 接入层
 - `knowledge.search` 已传 kind 过滤后为空 → 空结果，不回落默认；intent / scope 非法值报错
 - `context.startup` 跳过 secret；各 get 对 draft 放行，secret → `secret_blocked`
 
-当前发布：**v0.1.0**。20 个 MCP 工具、Git-backed apply、后台 WebUI、热度 / 审计 / 模板、`agent_prompt`。部署脚本在 `deploy/mcp/`。变更见 [`CHANGELOG.md`](CHANGELOG.md)。
+当前发布：**v0.1.0**。下一小版本 [`docs/v0.1.1.md`](docs/v0.1.1.md)（验证收尾）。长期路线 [`docs/roadmap.md`](docs/roadmap.md)。变更见 [`CHANGELOG.md`](CHANGELOG.md)。
