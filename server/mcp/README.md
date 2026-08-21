@@ -76,7 +76,7 @@ CREATE UNIQUE INDEX idx_auth_tokens_active_name
   ON auth_tokens(name) WHERE status='active';
 ```
 
-签发 / 轮换：SQLite 成功后**同步** upsert `tokenCache`，再返回明文。撤销可以等 ≤5s。webUI 列表只出 `active` / `grace`，`revoked` 不展示（行留在 SQLite）。操作成功 / 失败 / 错误用 toast，不用页顶错误条。  
+签发 / 轮换：SQLite 成功后**同步** upsert `tokenCache`，再返回明文。撤销可以等 ≤5s。webUI 列表只出 `active` / `grace`，`revoked` 不展示（行留在 SQLite）。操作成功 / 失败 / 错误用 **sonner toast（bottom-right）**，不用页顶错误条、不用右上角自写列表。交互控件走 shadcn/ui（设计文档 §21.5.10）：日期用 Calendar + Popover，确认用 AlertDialog，明文用 Dialog。  
 轮换：先把 SQLite 旧行改成 `grace`，再**同步改旧 hash 的 cache**（`grace_period_hours=0` 则直接删），再 INSERT 同名新行并 upsert 新 cache。只 upsert 新行会让旧 token 再活 ≤5s 的 `active`。
 
 ## 5. 工具（20）
