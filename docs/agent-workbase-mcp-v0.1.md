@@ -392,16 +392,20 @@ CREATE INDEX idx_auth_tokens_status ON auth_tokens(status);
   5. 同步 upsert 该行进 tokenCache（签发必须立刻能用，不能等 5s reload）
   6. 返回明文 token **仅一次**（不存明文到任何地方）
   ↓
-弹窗：
+弹窗（模态，关之前必须点「我已保存」或复制成功）：
   ┌─ 你的 Token（只展示一次，请立即复制保存）─────────┐
   │  Name: minimax-code                              │
+  │  说明: 给 MiniMax Code 用的只读+提案 token        │
   │  Token: <base64 32 字节，仅展示这一次>            │
   │  Scopes: read:context, read:knowledge, ...        │
   │  [复制到剪贴板]  [我已保存]                       │
   └──────────────────────────────────────────────────┘
+  复制成功 → 按钮文案改成「已复制」，短暂态，不是静默。
+  签发 / 轮换失败 → 页顶错误条，写清原因（重名 / scope 非法），不要只 reload。
   ↓
-关弹窗 / 刷新页面 → 列表只显示 name + scopes + 创建时间 + last_used_at + use_count
+关弹窗 / 刷新页面 → 列表显示 name + **description** + scopes + status + 创建时间 + last_used_at + use_count
                     **永远不再展示明文**
+签发 / 轮换 / 撤销都要有结果反馈。撤销、轮换点下去之前必须二次确认（§6.4.4 / §6.4.5）。列表里的 description 就是创建时填的那一行，不能只进库不渲染。
 ```
 
 **`config.yaml` 不再含 `auth.clients[]`**——所有 Token 都在 SQLite `auth_tokens` 表，零重启生效。唯一保留的 auth 字段是 `auth.grace_period_hours`（轮换 / 撤销灰度时长）。
@@ -459,7 +463,7 @@ go func() {
 ```
 webUI → Token 列表 → 选中 token → 点"轮换"
   ↓
-弹窗确认：轮换将撤销旧 token
+弹窗确认：轮换将立刻作废旧明文（grace 默认 0）。确认文案必须带 token name。
   - 灰度期 = config.auth.grace_period_hours，**默认 0 = 无灰度**（安全感优先）
   - 配 N = 旧 token 在 grace_until 之前仍可用
   ↓
@@ -491,7 +495,7 @@ webUI → Token 列表 → 选中 token → 点"轮换"
 ```
 webUI → Token 列表 → 选中 token → 点"撤销"
   ↓
-弹窗确认（输入 token name 二次确认）
+弹窗确认：必须输入该 token 的 **name** 才可点确定。点错行不能直接撤销。
   ↓
 后端：
   1. UPDATE auth_tokens SET status='revoked' WHERE id=?
@@ -813,7 +817,7 @@ main()
 
 ## 9. MCP 工具集
 
-19 个工具，每个的字段映射（请求/返回/状态码/错误）在 `SCHEMA.md §4-§20` 维护（一工具一节，§12 为预留跳号，§21 是敏感模式，§22-§27 是结构化 / 状态机 / 算法 / 落点 / 修改流程）。本节列用途和关键设计。
+20 个工具，每个的字段映射（请求/返回/状态码/错误）在 `SCHEMA.md §4-§20` 维护（一工具一节，§12 = `proposal.update`，§21 是敏感模式，§22-§27 是结构化 / 状态机 / 算法 / 落点 / 修改流程）。本节列用途和关键设计。
 
 ```text
 workbase.identity          SCHEMA.md §4
@@ -830,6 +834,7 @@ mcp.get                   SCHEMA.md §11.3
 proposal.create           SCHEMA.md §13
 proposal.list             SCHEMA.md §14
 proposal.get              SCHEMA.md §15
+proposal.update           SCHEMA.md §12
 inbox.append              SCHEMA.md §16
 inbox.update              SCHEMA.md §17
 inbox.list                SCHEMA.md §18
@@ -905,7 +910,7 @@ audit.list_recent         SCHEMA.md §20
       "project.list", "project.get",
       "skill.list", "skill.get",
       "mcp.list", "mcp.get",
-      "proposal.create", "proposal.list", "proposal.get",
+      "proposal.create", "proposal.list", "proposal.get", "proposal.update",
       "inbox.append", "inbox.update", "inbox.list", "inbox.get",
       "audit.list_recent"
     ],
@@ -929,7 +934,7 @@ audit.list_recent         SCHEMA.md §20
     "allowed_tools": [
       "workbase.identity", "context.startup", "context.get",
       "knowledge.search", "knowledge.get",
-      "proposal.create", "proposal.list", "proposal.get",
+      "proposal.create", "proposal.list", "proposal.get", "proposal.update",
       "inbox.append", "inbox.update", "inbox.list", "inbox.get"
     ]
   }
@@ -1077,19 +1082,31 @@ knowledge:
 
 ### 9.13 proposal.list / 9.14 proposal.get
 
-按 status / created_by / time 范围列出 / 读取单条。`get` 返回完整 proposal + receipt（含 commit / content_sha256 / replayed）。
+按 status / created_by / time 范围列出 / 读取单条。`get` 返回完整 proposal + receipt（含 commit / content_sha256 / replayed）+ `comments`（时间正序）。
 
-### 9.15 inbox.append / 9.16 inbox.update
+### 9.15 proposal.update
 
-新建 pending 待办 / 编辑内容或改变状态。不进 Vault，不触发 apply / commit。敏感模式开启且命中 → 响应 `warnings`，照样创建/更新。`warnings` **不**写进 `{id}.md`。
+Agent 或 webUI 改 **尚未落盘** 的 proposal。字段映射 `SCHEMA.md §12`。这是第 20 个 MCP 工具，不是预留空节。
 
-### 9.17 inbox.list / 9.18 inbox.get
+只允许 `pending` / `conflict`。可改 `reason` / `target` / `operation` / `payload`，可追加一条 `comment`。评论 **不** 改 status。`applied` / `rejected` / `approved`（正在 apply）一律 `invalid status transition`。
 
-按 status / created_by / time 列出 / 读取单条。`get` 每次读再扫一遍 content 填 `warnings`。`list` 不返回 `warnings`。`done` / `abandoned` 超过 `retention_days` 不返回（已自动删除）。
+小问题：人在 webUI 直接改 payload 再批准。大问题：人留评论，Agent 用本工具改 payload 并回复，人再批准。
 
-### 9.19 audit.list_recent
+### 9.16 inbox.append / 9.17 inbox.update
 
-按 time 范围 / client_id / tool 过滤，返回审计摘要。详细 schema 在 `SCHEMA.md §20`。---
+新建 pending 待办 / 编辑内容或改变状态 / 追加评论。不进 Vault，不触发 apply / commit。敏感模式开启且命中 → 响应 `warnings`，照样创建/更新。`warnings` **不**写进 `{id}.md`。
+
+`comment` 可选。有值则 append 一条，不能改历史评论。评论不改 status。
+
+### 9.18 inbox.list / 9.19 inbox.get
+
+按 status / created_by / time 列出 / 读取单条。`get` 每次读再扫一遍 content 填 `warnings`，并返回 `comments`。`list` 不返回 `warnings` / `comments` 全文（看板只要摘要；`comment_count` 可带）。`done` / `abandoned` 超过 `retention_days` 不返回（已自动删除）。
+
+### 9.20 audit.list_recent
+
+按 time 范围 / client_id / tool 过滤，返回审计摘要。详细 schema 在 `SCHEMA.md §20`。MCP 本工具只用 `since`（从某时起到现在）。webUI `GET /api/audit/recent` 额外收 `until`，见 §21.5.5。
+
+---
 
 ## 10. Skill Registry
 
@@ -1218,12 +1235,14 @@ mcp_server       Workbase/mcps/*.md
 ### 15.5 operation.type
 
 ```text
-create_file          新建文件（路径必须在 vault.root 下，且文件还不存在）
+create_file          新建**文件**（路径必须在 vault.root 下，且文件还不存在）
 append               文件末尾追加（文件必须已存在）
 append_section       追加到指定标题下（标题不存在 → 先建标题再追加）
 patch_section        替换指定标题内容（标题不存在 → conflict）
 register_item        新增 registry item（skill / mcp，同 create_file）
 ```
+
+`create_file` / `register_item` **不是**「建空文件夹」操作。`target.path` 必须指向一个文件（通常 `.md`）。父目录不存在时 apply 用 `MkdirAll` 建父目录，这是落盘副作用，枚举里没有 `mkdir` / `create_dir`。不要用 `create_file` 去建一个没有正文的目录。
 
 不引入 JSON Patch / AST Patch。不引入 `replace_frontmatter`（枚举里没有就不收）。
 
@@ -1280,7 +1299,41 @@ pending → done | abandoned              # 看板拖拽一步到位，跳过 re
 | `done` | 已完成（审核通过） |
 | `abandoned` | 已废弃（不再需要处理） |
 
-### 16.4 生命周期
+状态机 **不可逆**：`done` / `abandoned` 不能拖回 `pending` / `reviewing`；`reviewing` 不能拖回 `pending`。看板拖到非法列必须拒绝并提示，卡片留在原列。终态条目仍可改正文 / 追加评论，直到 retention 删除。
+
+### 16.4 卡片：先预览再编辑
+
+点开卡片默认 **预览**：正文走 Markdown 渲染（GFM），方便人读。点「编辑」才切 textarea，用来纠正 Agent 写偏的内容。保存后回到预览。不要一打开就是源码框。
+
+四列必须有视觉差，不能只靠标题文字：
+
+| 列 | 语义色 |
+|---|---|
+| `pending` | 墨灰 / 未开始 |
+| `reviewing` | 琥珀 / 等人看 |
+| `done` | 绿 / 通过 |
+| `abandoned` | 浅灰 / 废弃 |
+
+### 16.5 评论线程（人审 ↔ Agent）
+
+Inbox **不是** Proposal，没有批准 / apply。但 `reviewing` 的本意就是「Agent 做完了，等人看」。人审完有两条路：
+
+- 效果够 → 拖到 `done`
+- 效果不够 → **不改状态**，留一条评论，让 Agent 按评论继续改 `content`，Agent 也可以回复这条评论
+
+评论规则：
+
+```text
+评论不改 status
+评论只追加，不改、不删历史
+author_type = human | agent
+webUI 登录用户 → human；MCP token 调用 → agent（created_by = token name）
+敏感模式开了：评论 body 命中只 warning，照样写入
+```
+
+落盘：`{id}.md` frontmatter 的 `comments:` 数组。正文仍是任务内容，评论不进 Markdown body。形状见 `SCHEMA.md §12.4`（Inbox / Proposal 共用 Comment 对象）。
+
+### 16.6 生命周期
 
 `done` / `abandoned` 保留 `retention_days` 天后自动删除。`pending` / `reviewing` 保留到状态改变为止，不设自动删除。
 
@@ -1294,16 +1347,16 @@ inbox:
 
 逻辑 = 标准 fallback：cfg 有值用 cfg，没值用 const。
 
-### 16.5 操作
+### 16.7 操作
 
 ```text
 inbox.append   新建 pending。敏感命中 → 响应 warnings，照样创建。warnings 不落盘
-inbox.update   编辑内容或改变状态。同上
-inbox.list     列出摘要。不返回 warnings
-inbox.get      读取单条。每次读 rescan content 填 warnings
+inbox.update   编辑内容 / 改变状态 / 追加评论。评论不改 status。同上
+inbox.list     列出摘要。不返回 warnings / 评论全文
+inbox.get      读取单条（含 comments）。每次读 rescan content 填 warnings
 ```
 
-### 16.6 与 Proposal 的关系
+### 16.8 与 Proposal 的关系
 
 两者定位不同，完全独立：
 
@@ -1347,7 +1400,7 @@ inbox.update
 retention_days 后自动删除（done / abandoned）
 ```
 
-### 16.7 inbox 只存 VPS
+### 16.9 inbox 只存 VPS
 
 inbox 只落 VPS 私有区 `/home/studio/workbase/inbox/`，不进入本地 Obsidian Vault，不触发 apply / git commit / rebuild。
 
@@ -1449,7 +1502,21 @@ approved → conflict → approved  (可救回；默认换新 base)
 
 `applied` 严格定义：完整 ours 构造成功 +（如需）3-way 成功 + git commit 成功 + 目标文件 SHA-256 校验通过。**不含** reindex / rebuild。用户点「同意」只是 `approved`。
 
-`conflict` 是**暂停态**。救回时默认重读当前 HEAD 当新 `base_commit`（旧 base 大概率过时）。也可以明确「只改 payload、不换 base」——再冲突就再停。
+**`applied` / `rejected` 是终态。** 不能再改 payload、不能再批准、不能再 apply。Vault 里那次 commit 已经发生（或明确拒绝）；要再改就开一条新 proposal。webUI 对这两态只读：预览 + 评论只读 + 无「保存 / 批准 / 拒绝」。
+
+`conflict` 是**暂停态**。救回时默认重读当前 HEAD 当新 `base_commit`（旧 base 大概率过时）。也可以明确「只改 payload、不换 base」——再冲突就再停。`pending` / `conflict` 可以：人直接改 payload；或人留评论，Agent 用 `proposal.update` 改完再回复。
+
+### 17.7 详情页：先预览变更，再表单
+
+点开 proposal **先看变更**，不要一进就是一堆输入框。
+
+1. 顶栏：id / status 色标 / created_by / created_at / base_commit
+2. 主区：红绿 Diff Viewer（`§21.5.4`）。`create_file` 的 before 为空文件
+3. 折叠「元数据」：reason / target.path / operation / section
+4. `pending` / `conflict` 才展开可编辑表单；编辑后即时重算 diff
+5. 底部：评论线程（与 Inbox 同一套 `comments` 形状）
+
+`diff` 字段（proposal.get）给人/Agent 读文本预览；webUI 用 before/after 做红绿对照，两者都要有。
 
 ```yaml
 receipt:
@@ -1644,6 +1711,16 @@ index:
 
 1. **排序加权**：`knowledge.search` 的 `signals.access` 使用本算法
 2. **冷数据清理候选**：长期低 score 条目进入清理候选，由用户确认后删除。当前只做排序，不自动清理。
+3. **webUI 热度榜**：`/workspace/access` 读 `Hot()`。空榜是合法状态，不是 bug
+
+**谁会加 `access_count`**：只有 MCP 的 `knowledge.get` / `context.get` / `project.get` / `skill.get` / `mcp.get` 命中时 `Hit()`。下面这些 **不加**：
+
+- `knowledge.search` / 后台 `/api/knowledge/search`
+- 后台 `/api/knowledge?id=`（管理员预览）
+- inbox / proposal / audit / identity / list 类工具
+- 公开博客页面浏览
+
+所以刚部署、Agent 还没 `get` 过任何条目时，热度页必须写清：「暂无访问记录。热度只统计 MCP get，不统计后台浏览。」不要画假条。
 
 ---
 
@@ -1883,16 +1960,16 @@ server/mcp/admin/
 | 模块 | 路由 | 主要功能 | 关键交互 |
 |---|---|---|---|
 | 登录 | `/login` | 登录 / 限流 | 表单提交，错误提示 |
-| 看板 | `/workspace/inbox` | Inbox 四列拖拽 | 拖拽改状态，右键菜单 |
-| Proposal 列表 | `/workspace/proposal` | 列出所有 proposal | 状态过滤，时间排序 |
-| Proposal 详情 | `/workspace/proposal/$id` | **红绿 diff** + 编辑后同意/拒绝 | 实时 diff 重算 |
-| 访问热度 | `/workspace/access` | 艾宾浩斯热度榜 + 曲线 | 时间窗口切换 |
-| 审计日志 | `/workspace/audit` | 实时流 + 过滤 | client_id / tool / 时间 |
-| 知识搜索 | `/workspace/search` | webUI 直搜 vault | 0 结果兜底（§9.4） |
-| Token 管理 | `/settings/token` | 创建/列表/撤销/轮换 | 一次性明文展示（§6.4） |
-| System 健康 | `/settings/system` | 进程/端口/磁盘/SQLite | 实时刷新按钮 |
-| Git 变更 | `/settings/git` | workbench HEAD 历史 + diff | 选中 commit 看 diff |
-| 模板 | `/settings/templates` | proposal 模板 + scope 组合 | CRUD |
+| 看板 | `/workspace/inbox` | Inbox 四列拖拽 + 预览/编辑 + 评论 | 非法拖拽拒绝；列有色差；评论不改状态 |
+| Proposal 列表 | `/workspace/proposal` | 列出所有 proposal | 状态过滤，时间排序；状态色标 |
+| Proposal 详情 | `/workspace/proposal/$id` | **先红绿 diff**，再表单；评论线程 | 终态只读；实时 diff 重算 |
+| 访问热度 | `/workspace/access` | 艾宾浩斯热度榜 | 空榜说明文案，不造假条 |
+| 审计日志 | `/workspace/audit` | 过滤列表 | client_id / tool / **since–until 区间** |
+| 知识搜索 | `/workspace/search` | webUI 直搜 vault | 关键词可选；kind/visibility/tag 单独就能搜；清除清全部条件 |
+| Token 管理 | `/settings/token` | 创建/列表/撤销/轮换 | 一次性明文弹窗 + 复制；二次确认；列表展示 description |
+| System 健康 | `/settings/system` | 进程/端口/磁盘/SQLite | 进入页开始轮询；呼吸灯；刷新有进行态 |
+| Git 变更 | `/settings/git` | workbench HEAD 历史 + diff | 左侧提交树；右侧占满剩余宽度 |
+| 模板 | `/settings/templates` | inbox / proposal / token 模板 | CRUD；在对应创建表单里选用 |
 
 #### 21.5.3 知识搜索 Workspace（具体展示形式）
 
@@ -1900,11 +1977,17 @@ server/mcp/admin/
 
 后台直扫 `notes` 表，**不过** MCP `knowledge.search` 的 `kind` 门禁。管理员能跨 kind 搜（含 `article` / `project` / `skill` / `mcp` / `context`）。这和 Agent 默认 `["note","article"]` 不是同一套——写明，不要做成「后台也只能搜 note」。
 
+后台搜索和 MCP `knowledge.search` **不是同一套门禁**：
+
+- MCP：`query` 必填；`kind` 只认 note/article（见 §9.4）
+- 后台：`q` **不是**必填。`kind` / `visibility` / `tag` 任一有值就可以列出。全空（无关键词也无过滤）才提示「输入关键词或选一个过滤条件」。不要把搜索按钮绑死在 `q.trim()`
+- `[清除]` 清关键词 **和** kind / visibility / tag / 排序（排序回到 `score`），并清结果。不是只清输入框
+
 **完整 UI**：
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
-│  [🔍 输入关键词________________________]  [搜索]  [清除]        │
+│  [🔍 输入关键词（可空）________________]  [搜索]  [清除]        │
 │                                                                  │
 │  过滤器:                                                         │
 │   kind:       [全部▾]  (note / article / project / skill / mcp / context) │
@@ -1988,6 +2071,65 @@ server/mcp/admin/
 
 **禁止**：Diff Viewer 不集成到公开博客（博客 = 公开展示层，webUI = 私密审批层）。
 
+#### 21.5.5 审计时间过滤
+
+`GET /api/audit/recent` 的时间参数是 **区间**，不是单个时刻：
+
+| 参数 | 含义 |
+|---|---|
+| `since` | 下限（含）。空 = 不限起点 |
+| `until` | 上限（含）。空 = 不限终点 |
+| `tool` / `client_id` / `result_status` | 等值过滤 |
+
+webUI 放两个 `datetime-local`，标签写成「从」「到」，**不要**一个无标签的时间控件。值为空就不传该参数。有值才转 RFC3339（按浏览器本地时区）。解析失败 → 页内错误「请输入有效的日期和时间」，**不要**把坏字符串塞给后端再 500。
+
+MCP `audit.list_recent` 继续只用 `since`（Agent 常用「从某时起到现在」）。后台多一个 `until`，不强迫 MCP 改默认。
+
+#### 21.5.6 System 健康
+
+健康页 **进入就开始轮询**，默认 15s，离开页面停。只靠手动刷新 = 人走开就不知道挂了。
+
+| 信号 | 行为 |
+|---|---|
+| `ok=true` | 状态点呼吸灯（绿，慢闪），文案「健康」 |
+| `ok=false` / 请求失败 | 状态点红，停止呼吸，文案「异常」+ 错误 |
+| 正在请求 | 刷新按钮 disabled + 「检查中…」；uptime 旁显示本次采样时间 |
+| 手动刷新 | 立刻打一次，成功后短暂「已更新」 |
+
+不要让人猜「点了没有」：按钮态、采样时间、灯，三件套都要有。健康检查是观测，不是装饰数字。
+
+#### 21.5.7 Git 变更
+
+左侧是 **提交节点列表**（竖线 + 圆点，线性 HEAD 历史；v0.1 工作台是单线，不画多分支拓扑）。每条：短 hash（墨色、可读）+ subject（正文色）+ author / date（次级，但对比度不能淡到像禁用）。
+
+右侧 **占满剩余宽度**：选中后展示完整 `git show` 元数据 + 红绿 diff，高度跟主栏走，不要在大片空白里塞一条窄预览再自己出滚动条。没选中时右侧空态写「选一条提交看 diff」。
+
+中文路径按 UTF-8 显示，不要把 `文章/` 渲染成 octal escape。
+
+#### 21.5.8 模板用途
+
+模板不是独立玩具。`kind` 三选一，用在对应创建表单：
+
+| kind | 用在哪 | 预填什么 |
+|---|---|---|
+| `inbox` | 待办看板「新建待办」 | title / content / tags |
+| `proposal` | 后台创建 / Agent 可参考的 payload 骨架 | target.type / operation / section / payload / reason |
+| `token` | Token 签发表单 | name 建议值 / description / scopes |
+
+创建 Inbox / Token 时表单顶部有「从模板填入」下拉。选中后覆盖空字段；已填的字段不静默覆盖（避免把正在写的内容冲掉）。模板页自己仍做 CRUD。
+
+没有「用模板直接创建一条待办并跳过表单」的隐藏通道——人还是要点一次创建。
+
+#### 21.5.9 阅读层级
+
+后台跟博客共用 token，但管理页必须让人 **扫得动**：
+
+- 页标题、卡片标题、主数字：加粗，用 `ink-1`，不要全员 `text-xs text-ink-3`
+- 次级说明才用 `ink-3`
+- 必填字段标签带明确标记（「必填」或 `*`），选填写「选填」
+- 主按钮（签发 / 批准 / 保存）实心；危险（撤销 / 拒绝 / 废弃）用破坏色 + 确认
+- 状态用色标，不靠一段灰字
+
 ### 21.6 可扩展性原则
 
 **目标**：后续加新功能 = 加新 route + 加新 API 端点 + 加新后端 module，**不动现有**。
@@ -2014,12 +2156,12 @@ server/mcp/admin/
 | 资源 | 端点 |
 |---|---|
 | `auth_tokens` | `POST /api/auth_tokens` / `GET /api/auth_tokens` / `POST /api/auth_tokens/$id/revoke` / `POST /api/auth_tokens/$id/rotate` |
-| `inbox` | `POST /api/inbox` / `GET /api/inbox` / `POST /api/inbox/$id`（更新）/ `DELETE /api/inbox/$id` |
-| `proposals` | `GET /api/proposals` / `GET /api/proposals/$id` / `POST /api/proposals/$id/approve` / `POST /api/proposals/$id/reject` / `POST /api/proposals/$id/edit` |
-| `audit` | `GET /api/audit/recent?limit=&since=&tool=&client_id=` |
+| `inbox` | `POST /api/inbox` / `GET /api/inbox` / `PUT /api/inbox/$id`（更新 content / status / 追加 comment）/ `DELETE /api/inbox/$id` |
+| `proposals` | `GET /api/proposals` / `GET /api/proposals/$id` / `PATCH /api/proposals/$id`（pending/conflict 改 payload + 可选 comment）/ `PUT /api/proposals/$id`（approve / reject） |
+| `audit` | `GET /api/audit/recent?limit=&since=&until=&tool=&client_id=&result_status=` |
 | `system` | `GET /api/system/health` |
 | `git` | `GET /api/git/history?limit=` / `GET /api/git/diff/$commit` |
-| `knowledge` | `GET /api/knowledge/search?q=&kind=&visibility=&limit=` / `GET /api/knowledge?id=`。`id` 走 query，因为 `notes.id` 是路径（含 `/`），不能塞进 URL path。kind 含 `article`。后台直扫 notes 表，不过 MCP kind 门禁 |
+| `knowledge` | `GET /api/knowledge/search?q=&kind=&visibility=&tag=&limit=` / `GET /api/knowledge?id=`。`id` 走 query，因为 `notes.id` 是路径（含 `/`），不能塞进 URL path。kind 含 `article`。后台直扫 notes 表，不过 MCP kind 门禁。`q` 可选，见 §21.5.3 |
 | `templates` | `GET /api/templates` / `POST /api/templates` / `POST /api/templates/$id` |
 
 #### 21.6.3 后端 module 划分
@@ -2163,12 +2305,12 @@ v0.1 完整验收（**不分版本**）：
 19. 3-way / commit 失败 → `conflict`，proposal 保留，返回冲突区段。救回默认换新 base。
 20. frontmatter 内部冲突 → 一律 conflict（不自动合并结构化字段）。
 21. 幂等：重复 apply 同一 proposal 返回原 receipt。
-22. inbox.append 可新建 pending；inbox.update 可改状态；inbox.list / get 可读回。敏感命中只 warning，不拒绝。warnings 不落盘，get 每次 rescan。
+22. inbox.append 可新建 pending；inbox.update 可改状态 / 改正文 / 追加评论；inbox.list / get 可读回（get 含 comments，list 只含 comment_count）。敏感命中只 warning，不拒绝。warnings 不落盘，get 每次 rescan。
 23. inbox retention_days 可配，config 有用 config，config 无用代码默认。
 24. inbox done / abandoned 超过 retention_days 自动删除。
-25. webUI：proposal 可审批（同意 / 拒绝 / 编辑）；inbox 可创建 / 编辑 / 调整状态。
+25. webUI：proposal 可审批（同意 / 拒绝 / 编辑）；inbox 可创建 / 预览 / 编辑 / 调整状态。Inbox 与 pending/conflict 的 proposal 有评论线程（人审 ↔ Agent 回复）；评论不改状态。`applied` / `rejected` 只读，不能再 apply。
 26. webUI 独立登录页，session token 不用 Basic Auth。
-27. 访问热度按艾宾浩斯曲线 score = count * exp(-elapsed/half_life) 排序。
+27. 访问热度按艾宾浩斯曲线 score = count * exp(-elapsed/half_life) 排序。只统计 MCP get；后台浏览不加 count。空榜合法。
 28. half_life_days 可配，config 有用 config，config 无用代码默认。
 29. 审计最小字段集齐全（ts / tool / client_id / scopes / args_digest / result_status / duration_ms）。
 30. secret visibility 内容默认不返回（search / list / startup / get）。draft 进 search `scope=all`、各 list、`context.startup`；有对应 scope 就能 get。
@@ -2180,14 +2322,22 @@ v0.1 完整验收（**不分版本**）：
 36. 可见性策略：config.yaml 的 schema 块改后 `systemctl restart` 生效（不热更新，不吃 SIGHUP）。
 37. 视觉规范：后台与博客共享同一套 token。
 38. 文档分层：设计文档 / SCHEMA.md / config.yaml（schema 块）/ Workbase 职责清晰，不重复。
+39. `proposal.update`（SCHEMA §12）：`pending` / `conflict` 可改字段并追加评论；`applied` / `rejected` / `approved` 拒绝。详情页先红绿 diff，再折叠表单。终态只读。
+40. Inbox 评论线程（SCHEMA §12.4 共用 Comment）+ 状态不可逆（`reviewing → pending` 非法；终态不能拖回）+ 卡片先预览再编辑。评论不改 status。非法拖拽拒绝并留原列。
+41. 后台知识搜索 `q` 可选；`kind` / `visibility` / `tag` 任一有值即可列出；全空才提示。`[清除]` 清全部条件 + 结果。MCP `query` 仍必填。后台 get 不加 `access_count`。
+42. 后台审计 `GET /api/audit/recent` 支持 `since`–`until` 区间。MCP `audit.list_recent` 只用 `since`。`datetime-local` 转 RFC3339 失败停前端，提示「请输入有效的日期和时间」。
+43. Token 列表渲染 `description`；签发 / 轮换明文只弹一次 + 复制成功态；轮换二次确认带 name；撤销必须输入 name。
+44. System 进页 15s 轮询，离开停止。绿呼吸灯 / 红异常；刷新有「检查中…」+ 采样时间。
+45. Git 左侧线性提交树（不画多分支）；右侧占满剩余宽度。中文路径 UTF-8，不要 octal escape。
+46. 模板 `kind` 三选一 `inbox` / `proposal` / `token`，只预填空字段，不跳过创建确认。
 ```
 
 ### 23.2 文档验收
 
 ```text
 1. docs/agent-workbase-mcp-v0.1.md 重写完成。
-2. SCHEMA.md 新建完成（含内容格式 + MCP 字段映射 + 审计 + 热度 + 状态机）。
-3. README 更新项目定位。
+2. SCHEMA.md 新建完成（含内容格式 + MCP 字段映射 + 审计 + 热度 + 状态机）。20 个工具各有独立小节（§12 = `proposal.update`）。
+3. README 更新项目定位；`server/mcp/README.md` 工具列表为 20，含 `proposal.update`。
 4. 不含真实 VPS IP / 私钥路径。
 5. v0.1 不使用向量数据库说明保留。
 6. Proposal target / operation schema 保留。
@@ -2244,6 +2394,7 @@ v0.1 完整验收（**不分版本**）：
 16. 文档分层 = 设计文档 / SCHEMA.md / Workbase 不重复。
 17. 不分版本（v0.1 = 完整版）。
 18. 不重命名仓库（继续 jiangnan-blog）。
+19. 后台 UX：Inbox 评论 + 先预览再编辑 + 四列色差 + 状态不可逆；Proposal 终态只读 + 先 diff 再表单 + `proposal.update`；审计 since–until；后台搜索 q 可选；Token description / 二次确认 / 明文弹窗；System 15s 轮询 + 呼吸灯；Git 提交树 + 右侧占满；模板 kind=inbox|proposal|token。
 ```
 
 ---
