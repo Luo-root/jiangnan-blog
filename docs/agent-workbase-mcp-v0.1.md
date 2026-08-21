@@ -1,6 +1,6 @@
 # 遇见江楠 · Agent Workbase MCP 设计文档
 
-> 状态：v0.1 完整版（不分 v0.1/v0.2 阶段；准备发版 `v0.1.0`，tag / Release 另开）
+> 状态：v0.1 完整版（不分 v0.1/v0.2 阶段）。发布标签：`v0.1.0`
 > 日期：2026-08-21
 > 项目定位：Blog as Agent Workbase / 博客即 Agent 工作基座
 > 仓库：`Luo-root/jiangnan-blog-agent-workbase`
