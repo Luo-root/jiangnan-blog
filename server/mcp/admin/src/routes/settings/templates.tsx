@@ -67,8 +67,8 @@ export function TemplatesPage() {
   return (
     <section className="flex h-full overflow-hidden">
       <div className="w-72 shrink-0 overflow-auto border-r border-border p-4">
-        <h2 className="text-lg font-semibold text-ink-1">模板</h2>
-        <p className="mt-1 text-xs text-ink-3">kind 三选一。只预填空字段，不跳过创建确认。</p>
+        <h2 className="text-xl font-bold text-ink-1">模板</h2>
+        <p className="mt-1 text-sm text-ink-3">kind 三选一。只预填空字段，不跳过创建确认。</p>
         <Button className="mt-3 w-full" size="sm" onClick={() => setCur(empty())}>+ 新建</Button>
         <div className="mt-3 space-y-1">
           {list.map((t) => (

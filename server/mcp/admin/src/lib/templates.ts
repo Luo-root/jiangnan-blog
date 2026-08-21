@@ -22,15 +22,19 @@ export async function loadTemplates(kind: string): Promise<Tpl[]> {
   return (list || []).filter((t) => (t.kind || "proposal") === kind);
 }
 
-export function fillEmpty<T extends Record<string, unknown>>(cur: T, patch: Partial<T>): T {
+export function fillEmpty<T extends Record<string, unknown>>(cur: T, patch: Partial<T>, defaults?: Partial<T>): { next: T; filled: string[] } {
   const next = { ...cur };
+  const filled: string[] = [];
   for (const [k, v] of Object.entries(patch)) {
     const key = k as keyof T;
     const old = next[key];
-    const empty = old == null || old === "" || (Array.isArray(old) && old.length === 0);
-    if (empty && v != null && v !== "") {
+    const def = defaults?.[key];
+    const atDefault = def !== undefined && JSON.stringify(old) === JSON.stringify(def);
+    const empty = old == null || old === "" || (Array.isArray(old) && old.length === 0) || atDefault;
+    if (empty && v != null && v !== "" && !(Array.isArray(v) && v.length === 0)) {
       next[key] = v as T[keyof T];
+      filled.push(String(k));
     }
   }
-  return next;
+  return { next, filled };
 }

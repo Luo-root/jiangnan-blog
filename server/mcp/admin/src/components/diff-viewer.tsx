@@ -71,7 +71,7 @@ export function DiffViewer({ before, after, leftLabel = "原文（红=删）", r
 
 export function UnifiedDiff({ text }: { text: string }) {
   return (
-    <pre className="max-h-[560px] overflow-auto whitespace-pre-wrap rounded-xl border border-border bg-card p-4 font-mono text-[12px] leading-6">
+    <pre className="h-full min-h-0 overflow-auto whitespace-pre-wrap rounded-xl border border-border bg-card p-4 font-mono text-[13px] leading-6">
       {(text || "（无 diff）").split("\n").map((line, i) => {
         const cls = line.startsWith("+") && !line.startsWith("+++")
           ? "text-accent"

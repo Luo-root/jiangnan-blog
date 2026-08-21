@@ -18,7 +18,7 @@ export function SimpleSelect({
       <SelectTrigger className={className}>
         <SelectValue />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent className="z-[80]">
         {items.map((it) => (
           <SelectItem key={it.value || EMPTY} value={it.value || EMPTY}>
             {it.label}

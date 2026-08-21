@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { CalendarDays } from "lucide-react";
+import type { DateRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
@@ -25,75 +26,91 @@ function applyTime(day: Date, hm: string): Date | null {
   return next;
 }
 
-export function DateTimePicker({
-  label,
-  value,
+function fmtDay(d: Date) {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+export function DateRangePicker({
+  from,
+  to,
   onChange,
 }: {
-  label: string;
-  value: Date | null;
-  onChange: (d: Date | null) => void;
+  from: Date | null;
+  to: Date | null;
+  onChange: (from: Date | null, to: Date | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [hm, setHm] = useState(value ? hmOf(value) : "00:00");
+  const [fromHm, setFromHm] = useState(from ? hmOf(from) : "00:00");
+  const [toHm, setToHm] = useState(to ? hmOf(to) : "23:59");
+  const selected: DateRange | undefined = from || to ? { from: from ?? undefined, to: to ?? undefined } : undefined;
   const text = useMemo(() => {
-    if (!value) return "未选择";
-    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())} ${hmOf(value)}`;
-  }, [value]);
+    if (!from && !to) return "选择日期范围";
+    const a = from ? `${fmtDay(from)} ${hmOf(from)}` : "…";
+    const b = to ? `${fmtDay(to)} ${hmOf(to)}` : "…";
+    return `${a}  →  ${b}`;
+  }, [from, to]);
 
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-ink-3">{label}</span>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button type="button" variant="outline" size="sm" className="min-w-48 justify-start font-mono">
-            <CalendarDays className="opacity-70" />
-            {text}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-3" align="start">
-          <Calendar
-            mode="single"
-            selected={value ?? undefined}
-            onSelect={(d) => {
-              if (!d) {
-                onChange(null);
-                return;
-              }
-              const next = applyTime(d, hm) ?? d;
-              onChange(next);
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className="min-w-72 justify-start font-mono font-medium">
+          <CalendarDays className="opacity-70" />
+          {text}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-3" align="start">
+        <Calendar
+          mode="range"
+          numberOfMonths={2}
+          selected={selected}
+          onSelect={(r) => {
+            const nf = r?.from ? (applyTime(r.from, fromHm) ?? r.from) : null;
+            const nt = r?.to ? (applyTime(r.to, toHm) ?? r.to) : null;
+            onChange(nf, nt);
+          }}
+        />
+        <div className="mt-3 flex items-center gap-3">
+          <span className="text-xs font-medium text-ink-2">从</span>
+          <Input
+            className="h-8 w-24 font-mono"
+            value={fromHm}
+            placeholder="HH:mm"
+            onChange={(e) => {
+              const v = e.target.value;
+              setFromHm(v);
+              if (!from) return;
+              const next = applyTime(from, v);
+              if (next) onChange(next, to);
             }}
           />
-          <div className="mt-3 flex items-center gap-2">
-            <span className="text-xs text-ink-3">时分</span>
-            <Input
-              className="h-8 w-24 font-mono"
-              value={hm}
-              placeholder="HH:mm"
-              onChange={(e) => {
-                const v = e.target.value;
-                setHm(v);
-                if (!value) return;
-                const next = applyTime(value, v);
-                if (next) onChange(next);
-              }}
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setHm("00:00");
-                onChange(null);
-                setOpen(false);
-              }}
-            >
-              清除
-            </Button>
-          </div>
-        </PopoverContent>
-      </Popover>
-    </div>
+          <span className="text-xs font-medium text-ink-2">到</span>
+          <Input
+            className="h-8 w-24 font-mono"
+            value={toHm}
+            placeholder="HH:mm"
+            onChange={(e) => {
+              const v = e.target.value;
+              setToHm(v);
+              if (!to) return;
+              const next = applyTime(to, v);
+              if (next) onChange(from, next);
+            }}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setFromHm("00:00");
+              setToHm("23:59");
+              onChange(null, null);
+            }}
+          >
+            清除
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 

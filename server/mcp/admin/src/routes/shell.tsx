@@ -51,12 +51,12 @@ export function Shell({ path }: { path: string }) {
     <div className="flex h-full min-w-[960px]">
       <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-card px-3 py-5">
         <div className="px-2 pb-4">
-          <h1 className="text-base font-semibold">Workbase · <span className="text-primary">后台</span></h1>
-          <p className="mt-1 font-mono text-[10px] text-ink-3">Blog as Agent Workbase</p>
+          <h1 className="text-base font-bold">Workbase · <span className="text-primary">后台</span></h1>
+          <p className="mt-1 font-mono text-[11px] font-medium text-ink-3">Blog as Agent Workbase</p>
         </div>
         {NAV.map((g) => (
           <nav key={g.group} className="mt-3">
-            <div className="px-2 pb-1 font-mono text-[10px] uppercase tracking-wider text-ink-4">{g.group}</div>
+            <div className="px-2 pb-1 font-mono text-[11px] font-semibold uppercase tracking-wider text-ink-3">{g.group}</div>
             {g.items.map((it) => {
               const active = path === it.href || (it.href === "/workspace/proposal" && path.startsWith("/workspace/proposal/"));
               return (

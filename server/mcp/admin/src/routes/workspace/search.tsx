@@ -65,13 +65,16 @@ export function SearchPage() {
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
 
-  async function run(e?: FormEvent) {
+  async function run(e?: FormEvent, override?: { sort?: string; kind?: string; visibility?: string }) {
     e?.preventDefault();
+    const s = override?.sort ?? sort;
+    const k = override?.kind ?? kind;
+    const vis = override?.visibility ?? visibility;
     setBusy(true);
-    const params = new URLSearchParams({ sort, limit: "20" });
+    const params = new URLSearchParams({ sort: s, limit: "20" });
     if (q.trim()) params.set("q", q.trim());
-    if (kind) params.set("kind", kind);
-    if (visibility) params.set("visibility", visibility);
+    if (k) params.set("kind", k);
+    if (vis) params.set("visibility", vis);
     if (tag) params.set("tag", tag);
     try {
       setOut(await api<SearchOut>(`/api/knowledge/search?${params}`));
@@ -110,8 +113,8 @@ export function SearchPage() {
 
   return (
     <section className="h-full overflow-auto p-6">
-      <h2 className="text-lg font-semibold text-ink-1">知识搜索</h2>
-      <p className="mt-1 text-xs text-ink-3">关键词可空。kind / visibility / tag 任一有值即可列出。清除清全部条件 + 结果。</p>
+      <h2 className="text-xl font-bold text-ink-1">知识搜索</h2>
+      <p className="mt-1 text-sm text-ink-3">关键词可空。换排序会立刻重排。无关键词时 access / hot 按 MCP get 热度。</p>
 
       <form onSubmit={run} className="mt-4 rounded-xl border border-border bg-card p-4">
         <div className="flex gap-2">
@@ -120,10 +123,10 @@ export function SearchPage() {
           <Button type="button" variant="outline" size="sm" onClick={clearAll}>清除</Button>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
-          <div className="flex items-center gap-2">kind <SimpleSelect className="w-36" value={kind} onValue={setKind} items={KINDS} /></div>
-          <div className="flex items-center gap-2">visibility <SimpleSelect className="w-32" value={visibility} onValue={setVisibility} items={VIS} /></div>
-          <div className="flex items-center gap-2">tag <Input className="h-9 w-36" value={tag} onChange={(e) => setTag(e.target.value)} /></div>
-          <div className="flex items-center gap-2">排序 <SimpleSelect className="w-32" value={sort} onValue={setSort} items={SORTS} /></div>
+          <div className="flex items-center gap-2 font-medium">kind <SimpleSelect className="w-36" value={kind} onValue={(v) => { setKind(v); if (out) run(undefined, { kind: v }); }} items={KINDS} /></div>
+          <div className="flex items-center gap-2 font-medium">visibility <SimpleSelect className="w-32" value={visibility} onValue={(v) => { setVisibility(v); if (out) run(undefined, { visibility: v }); }} items={VIS} /></div>
+          <div className="flex items-center gap-2 font-medium">tag <Input className="h-9 w-36" value={tag} onChange={(e) => setTag(e.target.value)} /></div>
+          <div className="flex items-center gap-2 font-medium">排序 <SimpleSelect className="w-32" value={sort} onValue={(v) => { setSort(v); if (out) run(undefined, { sort: v }); }} items={SORTS} /></div>
         </div>
       </form>
 

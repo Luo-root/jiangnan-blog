@@ -324,8 +324,9 @@ func TestSearchEmptyQueryNeedsFilter(t *testing.T) {
 	}
 	var out struct {
 		Results []struct {
-			ID    string  `json:"id"`
-			Score float64 `json:"score"`
+			ID      string             `json:"id"`
+			Score   float64            `json:"score"`
+			Signals map[string]float64 `json:"signals"`
 		} `json:"results"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
@@ -338,6 +339,14 @@ func TestSearchEmptyQueryNeedsFilter(t *testing.T) {
 		if r.Score != 0 {
 			t.Fatalf("filter-list score should be 0, got %+v", r)
 		}
+		if r.Signals == nil {
+			t.Fatalf("filter-list should still carry access/recency signals: %+v", r)
+		}
+	}
+
+	w = doJSON(h, http.MethodGet, "/api/knowledge/search?kind=article&sort=access", nil, token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("sort=access: %d %s", w.Code, w.Body.String())
 	}
 }
 
