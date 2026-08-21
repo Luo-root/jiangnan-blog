@@ -401,11 +401,11 @@ CREATE INDEX idx_auth_tokens_status ON auth_tokens(status);
   │  [复制到剪贴板]  [我已保存]                       │
   └──────────────────────────────────────────────────┘
   复制成功 → 按钮文案改成「已复制」，短暂态，不是静默。
-  签发 / 轮换失败 → 页顶错误条，写清原因（重名 / scope 非法），不要只 reload。
+  签发 / 轮换 / 撤销的成功、失败、错误 → **消息弹窗（toast）**，写清原因（重名 / scope 非法），不要页顶错误条，不要只 reload。
   ↓
-关弹窗 / 刷新页面 → 列表显示 name + **description** + scopes + status + 创建时间 + last_used_at + use_count
-                    **永远不再展示明文**
-签发 / 轮换 / 撤销都要有结果反馈。撤销、轮换点下去之前必须二次确认（§6.4.4 / §6.4.5）。列表里的 description 就是创建时填的那一行，不能只进库不渲染。
+关弹窗 / 刷新页面 → 列表显示 **active / grace** 的 name + **description** + scopes + status + 创建时间 + last_used_at + use_count
+                    **永远不再展示明文**。`revoked` **不进列表**（作废即从界面消失）
+签发 / 轮换 / 撤销都要有 toast 反馈。轮换点下去之前二次确认（文案带 name，§6.4.4）。撤销只要确认「作废该 token」，**不要**再做一个输入 name 的展示层（§6.4.5）。列表里的 description 就是创建时填的那一行，不能只进库不渲染。
 ```
 
 **`config.yaml` 不再含 `auth.clients[]`**——所有 Token 都在 SQLite `auth_tokens` 表，零重启生效。唯一保留的 auth 字段是 `auth.grace_period_hours`（轮换 / 撤销灰度时长）。
@@ -495,13 +495,15 @@ webUI → Token 列表 → 选中 token → 点"轮换"
 ```
 webUI → Token 列表 → 选中 token → 点"撤销"
   ↓
-弹窗确认：必须输入该 token 的 **name** 才可点确定。点错行不能直接撤销。
+确认弹窗：作废该 token（文案带 name 即可）。**不要**再要求输入 name——撤销 = 删掉作废，不是再展示一条记录。
   ↓
 后端：
   1. UPDATE auth_tokens SET status='revoked' WHERE id=?
+     # 行留在 SQLite（name 可再签发、audit 的 client_id 不碎），不是物理 DELETE
   2. 同步从 tokenCache 删掉该 hash（撤销也可以同步，5s reload 只是兜底）
   ↓
-最多再活到下次 reload（SLA ≤ 5s）；同步删了就立刻失效
+立刻从列表消失。最多再活到下次 reload（SLA ≤ 5s）；同步删了就立刻失效。
+webUI `GET /api/auth_tokens` **不返回** `status=revoked` 的行。
 ```
 
 **零重启**：同上。
@@ -1966,7 +1968,7 @@ server/mcp/admin/
 | 访问热度 | `/workspace/access` | 艾宾浩斯热度榜 | 空榜说明文案，不造假条 |
 | 审计日志 | `/workspace/audit` | 过滤列表 | client_id / tool / **since–until 区间** |
 | 知识搜索 | `/workspace/search` | webUI 直搜 vault | 关键词可选；kind/visibility/tag 单独就能搜；清除清全部条件 |
-| Token 管理 | `/settings/token` | 创建/列表/撤销/轮换 | 一次性明文弹窗 + 复制；二次确认；列表展示 description |
+| Token 管理 | `/settings/token` | 创建/列表/撤销/轮换 | 一次性明文弹窗 + 复制；轮换二次确认；撤销确认即作废、列表不再展示；操作结果用 toast |
 | System 健康 | `/settings/system` | 进程/端口/磁盘/SQLite | 进入页开始轮询；呼吸灯；刷新有进行态 |
 | Git 变更 | `/settings/git` | workbench HEAD 历史 + diff | 左侧提交树；右侧占满剩余宽度 |
 | 模板 | `/settings/templates` | inbox / proposal / token 模板 | CRUD；在对应创建表单里选用 |
@@ -2129,6 +2131,7 @@ MCP `audit.list_recent` 继续只用 `since`（Agent 常用「从某时起到现
 - 必填字段标签带明确标记（「必填」或 `*`），选填写「选填」
 - 主按钮（签发 / 批准 / 保存）实心；危险（撤销 / 拒绝 / 废弃）用破坏色 + 确认
 - 状态用色标，不靠一段灰字
+- 成功 / 失败 / 错误用 **消息弹窗（toast）**，不要做成单页面的页顶错误条。文案写清发生了什么，自动消失；错误可手动关掉
 
 ### 21.6 可扩展性原则
 
@@ -2155,7 +2158,7 @@ MCP `audit.list_recent` 继续只用 `since`（Agent 常用「从某时起到现
 
 | 资源 | 端点 |
 |---|---|
-| `auth_tokens` | `POST /api/auth_tokens` / `GET /api/auth_tokens` / `POST /api/auth_tokens/$id/revoke` / `POST /api/auth_tokens/$id/rotate` |
+| `auth_tokens` | `POST /api/auth_tokens` / `GET /api/auth_tokens`（**不返回** revoked） / `POST /api/auth_tokens/$id/revoke` / `POST /api/auth_tokens/$id/rotate` |
 | `inbox` | `POST /api/inbox` / `GET /api/inbox` / `PUT /api/inbox/$id`（更新 content / status / 追加 comment）/ `DELETE /api/inbox/$id` |
 | `proposals` | `GET /api/proposals` / `GET /api/proposals/$id` / `PATCH /api/proposals/$id`（pending/conflict 改 payload + 可选 comment）/ `PUT /api/proposals/$id`（approve / reject） |
 | `audit` | `GET /api/audit/recent?limit=&since=&until=&tool=&client_id=&result_status=` |
@@ -2326,7 +2329,7 @@ v0.1 完整验收（**不分版本**）：
 40. Inbox 评论线程（SCHEMA §12.4 共用 Comment）+ 状态不可逆（`reviewing → pending` 非法；终态不能拖回）+ 卡片先预览再编辑。评论不改 status。非法拖拽拒绝并留原列。
 41. 后台知识搜索 `q` 可选；`kind` / `visibility` / `tag` 任一有值即可列出；全空才提示。`[清除]` 清全部条件 + 结果。MCP `query` 仍必填。后台 get 不加 `access_count`。
 42. 后台审计 `GET /api/audit/recent` 支持 `since`–`until` 区间。MCP `audit.list_recent` 只用 `since`。`datetime-local` 转 RFC3339 失败停前端，提示「请输入有效的日期和时间」。
-43. Token 列表渲染 `description`；签发 / 轮换明文只弹一次 + 复制成功态；轮换二次确认带 name；撤销必须输入 name。
+43. Token 列表渲染 `description`（只列 active / grace；revoked 不展示）。签发 / 轮换明文只弹一次 + 复制成功态；轮换二次确认带 name；撤销确认即作废，不要输入 name。成功 / 失败 / 错误用 toast，不用页顶错误条。
 44. System 进页 15s 轮询，离开停止。绿呼吸灯 / 红异常；刷新有「检查中…」+ 采样时间。
 45. Git 左侧线性提交树（不画多分支）；右侧占满剩余宽度。中文路径 UTF-8，不要 octal escape。
 46. 模板 `kind` 三选一 `inbox` / `proposal` / `token`，只预填空字段，不跳过创建确认。
@@ -2394,7 +2397,7 @@ v0.1 完整验收（**不分版本**）：
 16. 文档分层 = 设计文档 / SCHEMA.md / Workbase 不重复。
 17. 不分版本（v0.1 = 完整版）。
 18. 不重命名仓库（继续 jiangnan-blog）。
-19. 后台 UX：Inbox 评论 + 先预览再编辑 + 四列色差 + 状态不可逆；Proposal 终态只读 + 先 diff 再表单 + `proposal.update`；审计 since–until；后台搜索 q 可选；Token description / 二次确认 / 明文弹窗；System 15s 轮询 + 呼吸灯；Git 提交树 + 右侧占满；模板 kind=inbox|proposal|token。
+19. 后台 UX：Inbox 评论 + 先预览再编辑 + 四列色差 + 状态不可逆；Proposal 终态只读 + 先 diff 再表单 + `proposal.update`；审计 since–until；后台搜索 q 可选；Token description / 轮换二次确认 / 撤销即从列表消失 / 明文弹窗；操作反馈用 toast 不用页顶错误条；System 15s 轮询 + 呼吸灯；Git 提交树 + 右侧占满；模板 kind=inbox|proposal|token。
 ```
 
 ---
