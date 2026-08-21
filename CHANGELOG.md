@@ -1,10 +1,10 @@
 # Changelog
 
-本仓库按 SemVer 发版。`v0.1.0` 的 tag / GitHub Release **尚未打**，本文档先把准备态写清。
+本仓库按 SemVer 发版。
 
-## 0.1.0 — 准备中
+## 0.1.0 — 2026-08-21
 
-Blog as Agent Workbase 第一版完整实施。
+Blog as Agent Workbase 第一版。
 
 ### 公开博客
 - Obsidian Vault（`D:/Data/工作台`）为事实源；朝曦 / 夜隐双主题
@@ -15,6 +15,7 @@ Blog as Agent Workbase 第一版完整实施。
 - 20 个 MCP 工具（含 `proposal.update`）
 - Git-backed 3-way apply；Inbox 看板 + 评论；Token SQLite
 - 热度艾宾浩斯 `Hot()`；审计 SQLite；后台 WebUI（shadcn/ui）
+- `workbase.identity` 返回可粘贴 `agent_prompt`（从 Vault 即时拼操作环）
 - 仓库：`Luo-root/jiangnan-blog-agent-workbase`
 - Go module：`github.com/Luo-root/jiangnan-blog-agent-workbase/mcp`
 
