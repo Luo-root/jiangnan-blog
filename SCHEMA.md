@@ -1276,7 +1276,7 @@ Token / 审计不进 `notes`：
 CREATE UNIQUE INDEX idx_auth_tokens_active_name ON auth_tokens(name) WHERE status='active';
 ```
 
-`description` 是创建时用户填的说明，**列表接口必须原样返回**；webUI 卡片要渲染这一行，不能只进库。签发 / 轮换的响应里明文 `token` 只出现一次，同时回 `description`。签发 / 轮换 / 撤销的页面交互见设计文档 §6.4。
+`description` 是创建时用户填的说明，**列表接口必须原样返回**；webUI 卡片要渲染这一行，不能只进库。签发 / 轮换的响应里明文 `token` 只出现一次，同时回 `description`。`GET /api/auth_tokens` **不返回** `status=revoked` 的行（撤销 = 作废，界面不再展示；SQLite 行保留，name 可再签发）。签发 / 轮换 / 撤销的页面交互见设计文档 §6.4。
 
 ```sql
 -- 主表
