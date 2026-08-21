@@ -16,11 +16,11 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/audit"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/config"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/inbox"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/index"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/proposal"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/audit"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/config"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/inbox"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/index"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/proposal"
 )
 
 // --------------------------------------------------------------------------

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/apply"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/audit"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/search"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/apply"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/audit"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/search"
 )
 
 func (h *Handler) listAudit(w http.ResponseWriter, r *http.Request) {

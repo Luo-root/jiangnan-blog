@@ -1068,7 +1068,7 @@ abandoned  → 任何状态
 | `client_id` | string | no | - | 客户端过滤 |
 | `result_status` | enum | no | all | `success` / `error` / `unauthorized` / `forbidden` / `all` |
 
-webUI 两个时间控件对应 `since` / `until`。值为空就不传。前端用 shadcn **Calendar + Popover + 时分**（设计文档 §21.5.10），**不用**原生 `datetime-local`。选中后按浏览器本地时区转 RFC3339；转失败停在前端，toast「请输入有效的日期和时间」，不要把坏字符串交给后端。`until` < `since` → `invalid_argument`。API 仍只收 RFC3339 字符串，控件选型不改字段名。
+webUI 一个 Calendar `mode=range` 对应 `since` / `until`（两端再填时分）。值为空就不传。前端用 shadcn **Calendar range + Popover + 时分**（设计文档 §21.5.10），**不用**原生 `datetime-local`，**不用**两个独立日期框。选中后按浏览器本地时区转 RFC3339；转失败停在前端，toast「请输入有效的日期和时间」，不要把坏字符串交给后端。`until` < `since` → `invalid_argument`。API 仍只收 RFC3339 字符串，控件选型不改字段名。
 
 ### §20.2 响应元素
 
@@ -1345,7 +1345,7 @@ backlinks(
 | 控件 | 对应字段 / 场景 | 禁止 |
 |---|---|---|
 | sonner `Toaster` position=`bottom-right` | 签发 / 保存 / 拖拽拒绝 / 搜索失败 / 审计坏日期 | 自写 toast 列表；右上角；页顶错误条 |
-| `DateTimePicker`（Calendar + Popover + 时分） | 审计 `since` / `until` → RFC3339 | `datetime-local` |
+| `DateRangePicker`（Calendar `mode=range` + 两端时分） | 审计 `since` / `until` → RFC3339 | `datetime-local`；两个独立日期框 |
 | `Dialog` | Token 明文一次展示；Inbox 新建 / 详情 | 自写 modal 遮罩 |
 | `AlertDialog` | Token 轮换 / 撤销；Proposal 批准 / 拒绝 | `window.confirm` |
 | `Select` | 搜索 kind / visibility / 排序；模板下拉 | 原生 `<select>` |

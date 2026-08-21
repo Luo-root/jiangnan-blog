@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/comment"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/comment"
 )
 
 func TestCreateIDAndStatus(t *testing.T) {

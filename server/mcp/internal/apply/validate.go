@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/vault"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/vault"
 	"gopkg.in/yaml.v3"
 )
 

@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/comment"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/comment"
 	"gopkg.in/yaml.v3"
 )
 

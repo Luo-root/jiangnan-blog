@@ -1,4 +1,4 @@
-module github.com/Luo-root/jiangnan-blog/mcp
+module github.com/Luo-root/jiangnan-blog-agent-workbase/mcp
 
 go 1.25.5
 

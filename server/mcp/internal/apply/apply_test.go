@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/proposal"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/proposal"
 )
 
 func TestAllowedMatrix(t *testing.T) {

@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/proposal"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/proposal"
 )
 
 type Deps struct {

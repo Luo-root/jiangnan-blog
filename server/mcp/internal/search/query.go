@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/vault"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/vault"
 )
 
 type Doc struct {

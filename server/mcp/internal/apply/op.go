@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/proposal"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/proposal"
 )
 
 var (

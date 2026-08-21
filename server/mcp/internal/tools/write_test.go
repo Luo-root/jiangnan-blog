@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/comment"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/config"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/inbox"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/proposal"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/comment"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/config"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/inbox"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/proposal"
 )
 
 func commentCount(v any) int {
