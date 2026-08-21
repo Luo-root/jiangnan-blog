@@ -2394,7 +2394,13 @@ v0.1 完整验收（**不分版本**）：
 
 ## 24. Milestones
 
-不分阶段。v0.1 = 完整版。完成后直接转 v1.0 维护期。
+v0.1 = 完整第一版（已发 `v0.1.0`）。其后 **小版本 = 验证与打磨**，不是把完整版拆成阶段。
+
+- `v0.1.0`：契约 + 20 工具 + 后台 + `agent_prompt`（已发）
+- `v0.1.1`：生产路径验证 + 使用中改操作环。见 [`v0.1.1.md`](v0.1.1.md)。**不含**拆仓、DSH、向量、调度器
+- 控制中心 / 博客可选化：见 [`roadmap.md`](roadmap.md)，另开 Issue 再做
+
+完成后不自动改名叫 v1.0。v1.0 只在「控制中心能独立于博客运行」之后才讨论。
 
 ---
 
@@ -2444,6 +2450,7 @@ v0.1 完整验收（**不分版本**）：
 19. 后台 UX：Inbox 评论 + 先预览再编辑 + 四列色差 + 状态不可逆；Proposal 终态只读 + 先 diff 再表单 + `proposal.update`；审计 since–until；后台搜索 q 可选；Token description / 轮换二次确认 / 撤销即从列表消失 / 明文弹窗；操作反馈用 toast 不用页顶错误条；System 15s 轮询 + 呼吸灯；Git 提交树 + 右侧占满；模板 kind=inbox|proposal|token。
 20. 后台交互控件 = shadcn/ui（与博客同源）。toast = sonner、默认 bottom-right。审计日期 = Calendar `mode=range` + 两端时分，不用 datetime-local、不用两个独立日期框。不引 Ant Design / MUI。领域组件（看板 / Diff / 轻量 Markdown / 评论）仍自写。
 21. Agent 要把本 MCP 当长期记忆基座，不只是连上工具。`workbase.identity` 返回可粘贴的 `agent_prompt`（从 Vault 即时拼：Purpose / Security / `context/operating-loop.md` / 当前 token 允许的工具）。MCP `initialize.instructions` 只给短引导（去调 identity）。后台 System 页一键复制。不新增第 21 个工具。
+22. v0.1.1 = 验证收尾 + 使用中打磨，不换 MCP、不拆博客仓。控制中心与博客可选化见 `docs/roadmap.md`。
 ```
 
 ---

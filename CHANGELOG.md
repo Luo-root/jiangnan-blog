@@ -2,6 +2,10 @@
 
 本仓库按 SemVer 发版。
 
+## 0.1.1 — 计划
+
+功能验证收尾 + 使用中打磨。不换协议、不拆仓。计划见 [`docs/v0.1.1.md`](docs/v0.1.1.md)。路线见 [`docs/roadmap.md`](docs/roadmap.md)。
+
 ## 0.1.0 — 2026-08-21
 
 Blog as Agent Workbase 第一版。
