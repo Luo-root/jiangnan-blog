@@ -412,7 +412,7 @@ func (s *Store) Create(name, description, createdBy string, scopes []string) (pl
 }
 
 func (s *Store) List() ([]Token, error) {
-	rows, err := s.db.Query(`SELECT id,name,token_hash,scopes,status,grace_until,description,created_at,created_by,last_used_at,use_count FROM auth_tokens ORDER BY id DESC`)
+	rows, err := s.db.Query(`SELECT id,name,token_hash,scopes,status,grace_until,description,created_at,created_by,last_used_at,use_count FROM auth_tokens WHERE status != ? ORDER BY id DESC`, StatusRevoked)
 	if err != nil {
 		return nil, err
 	}

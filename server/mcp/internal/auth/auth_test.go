@@ -132,6 +132,32 @@ func TestRevokeDropsCache(t *testing.T) {
 	}
 }
 
+func TestListHidesRevoked(t *testing.T) {
+	s := openStore(t, 0)
+	if _, _, err := s.Create("keep", "desc", "admin", nil); err != nil {
+		t.Fatal(err)
+	}
+	_, tok, err := s.Create("drop", "", "admin", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Revoke(tok.ID); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].Name != "keep" || list[0].Description != "desc" {
+		t.Fatalf("list = %+v", list)
+	}
+	for _, row := range list {
+		if row.Status == StatusRevoked {
+			t.Fatalf("revoked leaked: %+v", row)
+		}
+	}
+}
+
 func TestExpiredGraceRejected(t *testing.T) {
 	s := openStore(t, 24)
 	plain, tok, err := s.Create("bot", "", "admin", nil)

@@ -8,10 +8,22 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Luo-root/jiangnan-blog/mcp/internal/comment"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/config"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/inbox"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/proposal"
 )
+
+func commentCount(v any) int {
+	switch cs := v.(type) {
+	case []comment.Comment:
+		return len(cs)
+	case []any:
+		return len(cs)
+	default:
+		return -1
+	}
+}
 
 func setupWrite(t *testing.T) (*depsHolder, string) {
 	t.Helper()
@@ -155,6 +167,68 @@ func TestInboxAppendWarningNotPersisted(t *testing.T) {
 	gws, _ := got["warnings"].([]string)
 	if len(gws) == 0 {
 		t.Fatal("inbox.get should rescan warnings")
+	}
+}
+
+func TestProposalUpdatePendingAndTerminal(t *testing.T) {
+	r, _ := setupWrite(t)
+	created := wrap(r.handleProposalCreate(context.Background(), callReq(createArgs("note", "部署溯源/n.md", "append", "tail")))).mapOK(t)
+	id, _ := created["id"].(string)
+
+	msg := wrap(r.handleProposalUpdate(context.Background(), callReq(map[string]any{"id": id}))).errText(t)
+	if !strings.Contains(msg, "required field missing") {
+		t.Fatalf("empty patch: %q", msg)
+	}
+
+	updated := wrap(r.handleProposalUpdate(context.Background(), callReq(map[string]any{
+		"id":      id,
+		"reason":  "fix path",
+		"comment": map[string]any{"body": "will retry"},
+		"target":  map[string]any{"type": "note", "path": "部署溯源/n.md"},
+	}))).mapOK(t)
+	if updated["id"] != id {
+		t.Fatalf("id = %v", updated["id"])
+	}
+	if commentCount(updated["comments"]) != 1 {
+		t.Fatalf("comments = %#v", updated["comments"])
+	}
+
+	msg = wrap(r.handleProposalUpdate(context.Background(), callReq(map[string]any{
+		"id":     "prop_missing",
+		"reason": "x",
+	}))).errText(t)
+	if !strings.Contains(msg, "proposal not found") {
+		t.Fatalf("missing: %q", msg)
+	}
+
+	if _, err := r.d.Proposal.UpdateStatus(id, proposal.StatusRejected); err != nil {
+		t.Fatal(err)
+	}
+	msg = wrap(r.handleProposalUpdate(context.Background(), callReq(map[string]any{
+		"id":     id,
+		"reason": "too late",
+	}))).errText(t)
+	if !strings.Contains(msg, "terminal or in-flight") {
+		t.Fatalf("terminal: %q", msg)
+	}
+}
+
+func TestInboxUpdateComment(t *testing.T) {
+	r, _ := setupWrite(t)
+	created := wrap(r.handleInboxAppend(context.Background(), callReq(map[string]any{
+		"content": "do this",
+		"title":   "todo",
+	}))).mapOK(t)
+	id, _ := created["id"].(string)
+	got := wrap(r.handleInboxUpdate(context.Background(), callReq(map[string]any{
+		"id":      id,
+		"comment": map[string]any{"body": "looks stale"},
+	}))).mapOK(t)
+	if got["status"] != inbox.StatusPending && got["status"] != "pending" {
+		t.Fatalf("status = %v", got["status"])
+	}
+	if commentCount(got["comments"]) != 1 {
+		t.Fatalf("comments = %#v", got["comments"])
 	}
 }
 

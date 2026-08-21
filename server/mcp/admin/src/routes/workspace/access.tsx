@@ -1,29 +1,32 @@
 import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
+import { errText, useToast } from "../../components/toast";
 
 type Heat = { resource_id: string; count: number; last_access: string; score: number };
 
 export function AccessPage() {
-  const [rows, setRows] = useState<Heat[]>([]);
-  const [error, setError] = useState("");
+  const toast = useToast();
+  const [rows, setRows] = useState<Heat[] | null>(null);
   useEffect(() => {
-    api<Heat[]>("/api/heat").then(setRows).catch((e) => setError(String(e)));
+    api<Heat[]>("/api/heat").then(setRows).catch((e) => toast.error(errText(e)));
   }, []);
-  const max = rows[0]?.score || 0;
-  const sum = rows.reduce((n, x) => n + (x.count || 0), 0);
+  const list = rows || [];
+  const max = list[0]?.score || 0;
+  const sum = list.reduce((n, x) => n + (x.count || 0), 0);
   return (
     <section className="h-full overflow-auto p-6">
-      <h2 className="text-lg font-semibold">访问热度</h2>
-      <p className="mt-1 text-xs text-ink-3">score = count × exp(-days / half_life)。条按 score，不是 count。</p>
-      {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
+      <h2 className="text-lg font-semibold text-ink-1">访问热度</h2>
+      <p className="mt-1 text-xs text-ink-3">score = count × exp(-days / half_life)。条按 score，不是 count。只统计 MCP get。</p>
       <div className="mt-4 grid grid-cols-3 gap-3">
-        <Stat label="上榜资源" value={String(rows.length)} />
+        <Stat label="上榜资源" value={String(list.length)} />
         <Stat label="最高 score" value={max ? max.toFixed(3) : "0"} />
         <Stat label="累计读取" value={String(sum)} />
       </div>
       <div className="mt-4 rounded-xl border border-border bg-card p-4">
-        {rows.length === 0 ? <p className="text-sm text-ink-4">暂无访问记录</p> : null}
-        {rows.slice(0, 50).map((h) => (
+        {rows && list.length === 0 ? (
+          <p className="text-sm text-ink-2">暂无访问记录。热度只统计 MCP get，不统计后台浏览。</p>
+        ) : null}
+        {list.slice(0, 50).map((h) => (
           <div key={h.resource_id} className="flex items-center gap-3 border-b border-border py-2 last:border-0">
             <div className="w-72 truncate font-mono text-xs text-ink-2" title={h.resource_id}>{h.resource_id}</div>
             <div className="h-2.5 flex-1 overflow-hidden rounded bg-muted">

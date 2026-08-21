@@ -15,6 +15,7 @@ import (
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/apply"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/audit"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/auth"
+	"github.com/Luo-root/jiangnan-blog/mcp/internal/comment"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/inbox"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/index"
 	"github.com/Luo-root/jiangnan-blog/mcp/internal/proposal"
@@ -186,8 +187,10 @@ func (h *Handler) listInbox(w http.ResponseWriter, r *http.Request) {
 }
 
 type createReq struct {
-	CreatedBy string `json:"created_by"`
-	Content   string `json:"content"`
+	CreatedBy string   `json:"created_by"`
+	Content   string   `json:"content"`
+	Title     string   `json:"title"`
+	Tags      []string `json:"tags"`
 }
 
 func (h *Handler) createInbox(w http.ResponseWriter, r *http.Request) {
@@ -199,7 +202,7 @@ func (h *Handler) createInbox(w http.ResponseWriter, r *http.Request) {
 	if req.CreatedBy == "" {
 		req.CreatedBy = "webui"
 	}
-	id, err := h.Inbox.Append(req.CreatedBy, req.Content, "", nil)
+	id, err := h.Inbox.Append(req.CreatedBy, req.Content, req.Title, req.Tags)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -217,8 +220,11 @@ func (h *Handler) getInbox(w http.ResponseWriter, r *http.Request, id string) {
 }
 
 type updateReq struct {
-	Status  string `json:"status"`
-	Content string `json:"content"`
+	Status  string         `json:"status"`
+	Content string         `json:"content"`
+	Title   string         `json:"title"`
+	Tags    []string       `json:"tags"`
+	Comment *comment.Input `json:"comment"`
 }
 
 func (h *Handler) updateInbox(w http.ResponseWriter, r *http.Request, id string) {
@@ -227,11 +233,33 @@ func (h *Handler) updateInbox(w http.ResponseWriter, r *http.Request, id string)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
-	if err := h.Inbox.Update(id, inbox.Status(req.Status), req.Content, "", nil); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	user, _ := h.sessionUser(r)
+	var cmt *comment.Comment
+	if req.Comment != nil {
+		c, err := comment.New("human", user, *req.Comment)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		cmt = &c
+	}
+	if err := h.Inbox.Update(id, inbox.Status(req.Status), req.Content, req.Title, req.Tags, cmt); err != nil {
+		code := http.StatusInternalServerError
+		msg := err.Error()
+		if strings.Contains(msg, "not found") {
+			code = http.StatusNotFound
+		} else if strings.Contains(msg, "invalid status") {
+			code = http.StatusConflict
+		}
+		writeJSON(w, code, map[string]string{"error": msg})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"id": id, "status": req.Status})
+	item, err := h.Inbox.Get(id)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]string{"id": id, "status": req.Status})
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
 }
 
 // ---------------------------------------------------------------------------
@@ -303,11 +331,36 @@ type reviewReq struct {
 
 // updateProposal 编辑 proposal 字段（pending / conflict 可编辑）。
 // 设计文档 §21.5：支持「编辑后同意」和 conflict 救回。
+type proposalUpdateHTTP struct {
+	Reason     *string             `json:"reason,omitempty"`
+	Target     *proposal.Target    `json:"target,omitempty"`
+	Operation  *proposal.Operation `json:"operation,omitempty"`
+	Payload    *proposal.Payload   `json:"payload,omitempty"`
+	BaseCommit *string             `json:"base_commit,omitempty"`
+	Comment    *comment.Input      `json:"comment,omitempty"`
+}
+
 func (h *Handler) updateProposal(w http.ResponseWriter, r *http.Request, id string) {
-	var patch proposal.ProposalPatch
-	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+	var body proposalUpdateHTTP
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
+	}
+	patch := proposal.ProposalPatch{
+		Reason:     body.Reason,
+		Target:     body.Target,
+		Operation:  body.Operation,
+		Payload:    body.Payload,
+		BaseCommit: body.BaseCommit,
+	}
+	if body.Comment != nil {
+		user, _ := h.sessionUser(r)
+		c, err := comment.New("human", user, *body.Comment)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		patch.Comment = &c
 	}
 	p, err := h.Proposal.Update(id, patch)
 	if err != nil {
@@ -413,11 +466,11 @@ func proposalErrorCode(err error) int {
 	switch {
 	case strings.Contains(msg, "invalid review status"):
 		return http.StatusBadRequest
-	case strings.Contains(msg, "only pending") || strings.Contains(msg, "only pending or conflict"):
+	case strings.Contains(msg, "only pending") || strings.Contains(msg, "only pending or conflict") || strings.Contains(msg, "terminal or in-flight"):
 		return http.StatusConflict
 	case strings.Contains(msg, "only approved proposal"):
 		return http.StatusConflict
-	case strings.Contains(msg, "no such file") || strings.Contains(msg, "missing frontmatter") || strings.Contains(msg, "unclosed frontmatter"):
+	case strings.Contains(msg, "not found") || strings.Contains(msg, "no such file") || strings.Contains(msg, "missing frontmatter") || strings.Contains(msg, "unclosed frontmatter"):
 		return http.StatusNotFound
 	default:
 		return http.StatusInternalServerError

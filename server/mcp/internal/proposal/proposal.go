@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Luo-root/jiangnan-blog/mcp/internal/comment"
 	"gopkg.in/yaml.v3"
 )
 
@@ -43,7 +44,8 @@ type Proposal struct {
 	Risk       Risk       `json:"risk,omitempty" yaml:"risk,omitempty"`
 	Validation Validation `json:"validation,omitempty" yaml:"validation,omitempty"`
 
-	Receipt *Receipt `json:"receipt,omitempty" yaml:"receipt,omitempty"`
+	Receipt  *Receipt          `json:"receipt,omitempty" yaml:"receipt,omitempty"`
+	Comments []comment.Comment `json:"comments" yaml:"comments,omitempty"`
 }
 
 type Target struct {
@@ -111,6 +113,7 @@ func (s *Store) Create(p Proposal) (*Proposal, error) {
 	if p.Kind == "" {
 		p.Kind = p.Target.Type
 	}
+	p.Comments = comment.Slice(p.Comments)
 
 	path := filepath.Join(s.dir, p.ID+".md")
 	if err := writeProposal(path, p); err != nil {
@@ -147,6 +150,7 @@ func (s *Store) List() ([]Proposal, error) {
 		if err != nil {
 			continue
 		}
+		prop.Comments = comment.Slice(prop.Comments)
 		out = append(out, *prop)
 	}
 	return out, nil
@@ -155,7 +159,15 @@ func (s *Store) List() ([]Proposal, error) {
 func (s *Store) Get(id string) (*Proposal, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return readProposal(filepath.Join(s.dir, id+".md"))
+	p, err := readProposal(filepath.Join(s.dir, id+".md"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("proposal not found: %s", id)
+		}
+		return nil, err
+	}
+	p.Comments = comment.Slice(p.Comments)
+	return p, nil
 }
 
 func (s *Store) Update(id string, patch ProposalPatch) (*Proposal, error) {
@@ -165,10 +177,13 @@ func (s *Store) Update(id string, patch ProposalPatch) (*Proposal, error) {
 	path := filepath.Join(s.dir, id+".md")
 	p, err := readProposal(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("proposal not found: %s", id)
+		}
 		return nil, err
 	}
 	if p.Status != StatusPending && p.Status != StatusConflict {
-		return nil, fmt.Errorf("proposal %s is %s, only pending or conflict proposal can be edited", id, p.Status)
+		return nil, fmt.Errorf("invalid status transition: %s is terminal or in-flight", p.Status)
 	}
 
 	if patch.Reason != nil {
@@ -186,6 +201,10 @@ func (s *Store) Update(id string, patch ProposalPatch) (*Proposal, error) {
 	if patch.BaseCommit != nil {
 		p.BaseCommit = *patch.BaseCommit
 	}
+	if patch.Comment != nil {
+		p.Comments = append(comment.Slice(p.Comments), *patch.Comment)
+	}
+	p.Comments = comment.Slice(p.Comments)
 
 	if err := writeProposal(path, *p); err != nil {
 		return nil, err
@@ -194,11 +213,12 @@ func (s *Store) Update(id string, patch ProposalPatch) (*Proposal, error) {
 }
 
 type ProposalPatch struct {
-	Reason     *string    `json:"reason,omitempty"`
-	Target     *Target    `json:"target,omitempty"`
-	Operation  *Operation `json:"operation,omitempty"`
-	Payload    *Payload   `json:"payload,omitempty"`
-	BaseCommit *string    `json:"base_commit,omitempty"`
+	Reason     *string          `json:"reason,omitempty"`
+	Target     *Target          `json:"target,omitempty"`
+	Operation  *Operation       `json:"operation,omitempty"`
+	Payload    *Payload         `json:"payload,omitempty"`
+	BaseCommit *string          `json:"base_commit,omitempty"`
+	Comment    *comment.Comment `json:"-"`
 }
 
 func (s *Store) UpdateStatus(id string, status Status) (*Proposal, error) {
@@ -286,5 +306,6 @@ func readProposal(path string) (*Proposal, error) {
 	if err := yaml.Unmarshal([]byte(fm), &p); err != nil {
 		return nil, fmt.Errorf("parse proposal: %w", err)
 	}
+	p.Comments = comment.Slice(p.Comments)
 	return &p, nil
 }

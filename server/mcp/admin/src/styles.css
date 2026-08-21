@@ -42,6 +42,16 @@
   --font-mono: var(--font-mono);
 }
 
+@keyframes pulse-ok {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 55%, transparent); }
+  50% { opacity: 0.55; box-shadow: 0 0 0 6px transparent; }
+}
+.breath-ok {
+  background: var(--accent);
+  animation: pulse-ok 2.4s ease-in-out infinite;
+}
+.breath-bad { background: var(--destructive); }
+
 html, body, #root { height: 100%; margin: 0; }
 body {
   background: var(--background);

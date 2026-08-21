@@ -108,7 +108,7 @@ func Log(gitDir string, limit int) ([]LogEntry, error) {
 	if limit > 200 {
 		limit = 200
 	}
-	out, err := runGit(gitDir, "", "log", "-n", strconv.Itoa(limit), "--pretty=format:%H%x09%an%x09%aI%x09%s")
+	out, err := runGit(gitDir, "", "-c", "core.quotepath=false", "log", "-n", strconv.Itoa(limit), "--pretty=format:%H%x09%an%x09%aI%x09%s")
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +132,7 @@ func Patch(gitDir, commit string) (string, error) {
 	if gitDir == "" || commit == "" {
 		return "", os.ErrInvalid
 	}
-	return runGit(gitDir, "", "show", "--stat", "--patch", "--format=fuller", "--no-color", commit)
+	return runGit(gitDir, "", "-c", "core.quotepath=false", "show", "--stat", "--patch", "--format=fuller", "--no-color", commit)
 }
 
 func runGit(gitDir, workTree string, args ...string) (string, error) {

@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api } from "../../lib/api";
+import { errText, useToast } from "../../components/toast";
 
 type Entry = {
   ts: string;
@@ -14,37 +15,57 @@ type Entry = {
   commit?: string;
 };
 
+function toRFC3339(local: string): string | null {
+  if (!local) return "";
+  const d = new Date(local);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
 export function AuditPage() {
+  const toast = useToast();
   const [rows, setRows] = useState<Entry[]>([]);
   const [tool, setTool] = useState("");
   const [client, setClient] = useState("");
   const [since, setSince] = useState("");
-  const [error, setError] = useState("");
+  const [until, setUntil] = useState("");
 
   async function load(e?: FormEvent) {
     e?.preventDefault();
-    setError("");
     const q = new URLSearchParams({ limit: "100" });
     if (tool) q.set("tool", tool);
     if (client) q.set("client_id", client);
-    if (since) q.set("since", new Date(since).toISOString());
+    if (since) {
+      const v = toRFC3339(since);
+      if (v == null) { toast.error("请输入有效的日期和时间"); return; }
+      if (v) q.set("since", v);
+    }
+    if (until) {
+      const v = toRFC3339(until);
+      if (v == null) { toast.error("请输入有效的日期和时间"); return; }
+      if (v) q.set("until", v);
+    }
     try {
       setRows(await api<Entry[]>(`/api/audit/recent?${q}`));
     } catch (err) {
-      setError(String(err));
+      toast.error(errText(err));
     }
   }
-  useEffect(() => { load().catch((e) => setError(String(e))); }, []);
+  useEffect(() => { load().catch((e) => toast.error(errText(e))); }, []);
 
   return (
     <section className="flex h-full flex-col p-6">
-      <h2 className="text-lg font-semibold">审计日志</h2>
-      <p className="mt-1 text-xs text-ink-3">最小字段集。不展示 token / args 原文。按 client / tool / 时间过滤。</p>
-      {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
+      <h2 className="text-lg font-semibold text-ink-1">审计日志</h2>
+      <p className="mt-1 text-xs text-ink-3">最小字段集。不展示 token / args 原文。按 client / tool / since–until 过滤。</p>
       <form onSubmit={load} className="mt-4 flex flex-wrap gap-2">
         <input className="rounded-lg border border-border px-3 py-2 font-mono text-xs" placeholder="tool" value={tool} onChange={(e) => setTool(e.target.value)} />
         <input className="rounded-lg border border-border px-3 py-2 font-mono text-xs" placeholder="client_id" value={client} onChange={(e) => setClient(e.target.value)} />
-        <input type="datetime-local" className="rounded-lg border border-border px-3 py-2 font-mono text-xs" value={since} onChange={(e) => setSince(e.target.value)} />
+        <label className="flex items-center gap-1 text-xs text-ink-3">since
+          <input type="datetime-local" className="rounded-lg border border-border px-3 py-2 font-mono text-xs" value={since} onChange={(e) => setSince(e.target.value)} />
+        </label>
+        <label className="flex items-center gap-1 text-xs text-ink-3">until
+          <input type="datetime-local" className="rounded-lg border border-border px-3 py-2 font-mono text-xs" value={until} onChange={(e) => setUntil(e.target.value)} />
+        </label>
         <button className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">刷新</button>
       </form>
       <div className="mt-4 min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card">

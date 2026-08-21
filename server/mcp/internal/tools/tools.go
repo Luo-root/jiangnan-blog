@@ -56,6 +56,7 @@ var toolScopes = map[string]string{
 	"proposal.create":   ScopeWriteProposal,
 	"proposal.list":     ScopeWriteProposal,
 	"proposal.get":      ScopeWriteProposal,
+	"proposal.update":   ScopeWriteProposal,
 	"inbox.append":      ScopeWriteInbox,
 	"inbox.update":      ScopeWriteInbox,
 	"inbox.list":        ScopeReadInbox,
@@ -200,6 +201,29 @@ func Register(srv *server.MCPServer, d Deps) {
 		mcp.WithString("id", mcp.Required(), mcp.Description("提案 id。")),
 	), r.handleProposalGet)
 
+	srv.AddTool(mcp.NewTool("proposal.update",
+		mcp.WithDescription("改尚未落盘的提案。只允许 pending / conflict；可改字段并追加评论。评论不改 status。"),
+		mcp.WithString("id", mcp.Required(), mcp.Description("提案 id。")),
+		mcp.WithString("reason", mcp.Description("修改原因。")),
+		mcp.WithObject("target", mcp.Description("改目标。给了就整段替换。"), mcp.Properties(map[string]any{
+			"type": map[string]any{"type": "string"},
+			"id":   map[string]any{"type": "string"},
+			"path": map[string]any{"type": "string"},
+		})),
+		mcp.WithObject("operation", mcp.Description("改操作。给了就整段替换。"), mcp.Properties(map[string]any{
+			"type":    map[string]any{"type": "string"},
+			"section": map[string]any{"type": "string"},
+		})),
+		mcp.WithObject("payload", mcp.Description("改内容。给了就整段替换。"), mcp.Properties(map[string]any{
+			"format":  map[string]any{"type": "string"},
+			"content": map[string]any{"type": "string"},
+		})),
+		mcp.WithObject("comment", mcp.Description("追加一条评论。有 body 就 append。"), mcp.Properties(map[string]any{
+			"body":     map[string]any{"type": "string", "description": "Markdown 正文"},
+			"reply_to": map[string]any{"type": "string", "description": "回复的评论 id"},
+		})),
+	), r.handleProposalUpdate)
+
 	srv.AddTool(mcp.NewTool("inbox.append",
 		mcp.WithDescription("创建一条待办（状态 pending），只存运行时私有区，不进 Vault。"),
 		mcp.WithString("content", mcp.Required(), mcp.Description("待办正文（Markdown）。")),
@@ -213,6 +237,11 @@ func Register(srv *server.MCPServer, d Deps) {
 		mcp.WithString("status", mcp.Description("新状态，省略则只改内容。")),
 		mcp.WithString("content", mcp.Description("替换正文，省略则保留原内容。")),
 		mcp.WithString("title", mcp.Description("修改标题。")),
+		mcp.WithArray("tags", mcp.Description("替换标签。省略则保留。"), mcp.WithStringItems()),
+		mcp.WithObject("comment", mcp.Description("追加一条评论。有 body 就 append。评论不改 status。"), mcp.Properties(map[string]any{
+			"body":     map[string]any{"type": "string"},
+			"reply_to": map[string]any{"type": "string"},
+		})),
 	), r.handleInboxUpdate)
 
 	srv.AddTool(mcp.NewTool("inbox.list",
