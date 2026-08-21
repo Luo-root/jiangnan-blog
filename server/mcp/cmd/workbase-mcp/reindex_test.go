@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/config"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/index"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/config"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/index"
 )
 
 func TestInternalReindexIgnoresRemoteAddr(t *testing.T) {

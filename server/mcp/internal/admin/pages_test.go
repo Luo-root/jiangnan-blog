@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/audit"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/index"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/audit"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/index"
 )
 
 func loginToken(t *testing.T, h *Handler) string {

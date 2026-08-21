@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/proposal"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/proposal"
 )
 
 func Preview(p *proposal.Proposal, vaultRoot string) string {

@@ -11,8 +11,8 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"gopkg.in/yaml.v3"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/auth"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/config"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/auth"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/config"
 )
 
 type workbaseMeta struct {

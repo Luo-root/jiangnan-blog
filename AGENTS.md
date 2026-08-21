@@ -20,7 +20,7 @@
 - 附件：`virtual:vault-index`（文件名→相对路径）解析 `![[图]]`；dev 走 `/vault/*` 中间件直读磁盘，build 走 `generateBundle` emit 到 `dist/vault/`
 
 ## Content Sync（部署方向）
-- 博客源码 GitHub repo：`Luo-root/jiangnan-blog`（友链申请 Issue 入口 `.../issues/new`）
+- 博客源码 GitHub repo：`Luo-root/jiangnan-blog-agent-workbase`（友链申请 Issue 入口 `.../issues/new`）
 - 本地：`VAULT_ROOT` 直指 `D:/Data/工作台`，直读磁盘，零拷贝
 - 部署：目标为自托管 VPS。方案 = 工作台作 Git 仓库 → 服务器 bare repo + post-receive hook 触发 `VAULT_ROOT=<checkout目录> npm run build`
 - 项目卡片整卡 `Link` 跳详情页 `/projects/$slug`，外链按钮在详情页内

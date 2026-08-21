@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/audit"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/audit"
 )
 
 func TestAuditListRecentSchemaFields(t *testing.T) {

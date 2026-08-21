@@ -13,9 +13,9 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/config"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/search"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/vault"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/config"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/search"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/vault"
 )
 
 type Store struct {

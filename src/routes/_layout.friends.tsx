@@ -84,7 +84,7 @@ function FriendsList() {
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <a
-            href="https://github.com/Luo-root/jiangnan-blog/issues/new"
+            href="https://github.com/Luo-root/jiangnan-blog-agent-workbase/issues/new"
             target="_blank"
             rel="noopener noreferrer"
             className="group flex items-center gap-4 rounded-sm border border-border/60 bg-card/60 p-5 transition-all hover:border-primary/40 hover:shadow-md hover:-translate-y-0.5"

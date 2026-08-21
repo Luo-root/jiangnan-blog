@@ -9,12 +9,12 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/apply"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/auth"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/comment"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/inbox"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/proposal"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/sanitize"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/apply"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/auth"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/comment"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/inbox"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/proposal"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/sanitize"
 )
 
 type proposalCreateArgs struct {

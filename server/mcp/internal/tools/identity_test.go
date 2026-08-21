@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/auth"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/config"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/auth"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/config"
 )
 
 const sampleMD = `---
@@ -35,7 +35,7 @@ visibility: private
 
 ## Source
 
-https://github.com/Luo-root/jiangnan-blog
+https://github.com/Luo-root/jiangnan-blog-agent-workbase
 `
 
 func TestParseWorkbaseMD(t *testing.T) {
@@ -55,7 +55,7 @@ func TestParseWorkbaseMD(t *testing.T) {
 	if len(meta.CriticalRules) != 2 {
 		t.Fatalf("rules = %v", meta.CriticalRules)
 	}
-	if len(meta.SeeAlso) != 1 || !strings.Contains(meta.SeeAlso[0], "jiangnan-blog") {
+	if len(meta.SeeAlso) != 1 || !strings.Contains(meta.SeeAlso[0], "jiangnan-blog-agent-workbase") {
 		t.Fatalf("see_also = %v", meta.SeeAlso)
 	}
 }

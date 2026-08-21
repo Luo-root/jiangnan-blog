@@ -2,7 +2,7 @@
 
 本目录的脚本用于把**前端代码**推送到 VPS（IP 走环境变量 `$env:BLOG_VPS`，**不要硬编码**）。
 
-**博客内容（Obsidian）走另一条链路**，由 `D:\Data\工作台\sync.ps1` 推到 VPS bare repo，详见 `D:\Data\工作台\README.md` 和 `D:\Data\工作台\部署溯源\jiangnan-blog.md`。
+**博客内容（Obsidian）走另一条链路**，由 `D:\Data\工作台\sync.ps1` 推到 VPS bare repo，详见 `D:\Data\工作台\README.md` 和 `D:\Data\工作台\部署溯源\`。
 
 ## 文件清单
 

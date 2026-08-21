@@ -9,8 +9,8 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/search"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/vault"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/search"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/vault"
 )
 
 func (r *depsHolder) handleContextStartup(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

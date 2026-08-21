@@ -9,8 +9,8 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/index"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/search"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/index"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/search"
 )
 
 func writeVault(t *testing.T, root, rel, body string) {

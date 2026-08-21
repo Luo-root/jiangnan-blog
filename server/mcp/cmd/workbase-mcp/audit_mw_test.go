@@ -10,8 +10,8 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/audit"
-	"github.com/Luo-root/jiangnan-blog/mcp/internal/auth"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/audit"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/auth"
 )
 
 func openAuditAuth(t *testing.T) (*auth.Store, *audit.Store, string) {

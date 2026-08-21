@@ -1,9 +1,9 @@
 # 遇见江楠 · Agent Workbase MCP 设计文档
 
-> 状态：v0.1 完整版（不分 v0.1/v0.2 阶段，v0.1 即完整 v1.0 设计的第一版实施）
-> 日期：2026-08-19
+> 状态：v0.1 完整版（不分 v0.1/v0.2 阶段；准备发版 `v0.1.0`，tag / Release 另开）
+> 日期：2026-08-21
 > 项目定位：Blog as Agent Workbase / 博客即 Agent 工作基座
-> 仓库：`Luo-root/jiangnan-blog`（暂不 rename）
+> 仓库：`Luo-root/jiangnan-blog-agent-workbase`
 > 文档分层：设计文档（why / what / 验收）/ `SCHEMA.md`（API + 字段 + 状态机 + 算法）/ `D:/Data/工作台/Workbase/`（运行时自描述数据）
 
 ---
@@ -2083,7 +2083,7 @@ server/mcp/admin/
 | `until` | 上限（含）。空 = 不限终点 |
 | `tool` / `client_id` / `result_status` | 等值过滤 |
 
-webUI 放两个 **日期时间选择器**（shadcn Calendar + Popover + 时分，§21.5.10），标签写成「从」「到」，**不要**一个无标签的时间控件，**不要**原生 `datetime-local`。值为空就不传该参数。有值才转 RFC3339（按浏览器本地时区）。解析失败 → toast「请输入有效的日期和时间」，**不要**把坏字符串塞给后端再 500。
+webUI 用 **一个** shadcn Calendar `mode=range`（从 / 到同一控件）+ 两端时分，§21.5.10。**不要**两个独立日期框，**不要**原生 `datetime-local`。值为空就不传该参数。有值才转 RFC3339（按浏览器本地时区）。解析失败 → toast「请输入有效的日期和时间」，**不要**把坏字符串塞给后端再 500。
 
 MCP `audit.list_recent` 继续只用 `since`（Agent 常用「从某时起到现在」）。后台多一个 `until`，不强迫 MCP 改默认。
 
@@ -2156,7 +2156,7 @@ MCP `audit.list_recent` 继续只用 `since`（Agent 常用「从某时起到现
 | 模态（明文 token、新建待办、详情） | `Dialog` | 自写 `modal.tsx` 遮罩 |
 | 二次确认（轮换 / 撤销 / 批准 / 拒绝） | `AlertDialog` | `window.confirm` |
 | 操作反馈 | **sonner** `toast.success` / `toast.error` | 自写右上角列表；页顶错误条 |
-| 审计「从 / 到」 | `DateTimePicker` = Calendar + Popover + 时分 `Input` | 原生 `datetime-local` |
+| 审计「从 / 到」 | `DateRangePicker` = Calendar `mode=range` + 两端时分 | 原生 `datetime-local`；两个独立日期框 |
 | 状态色标 | `Badge` | 手写 `rounded-full bg-*` 当唯一色标实现（语义色仍按 §16.4 / Proposal 状态） |
 | 卡片容器 | `Card` | 可选；看板列可以继续用现有色差容器 |
 | 审计表 | `Table` | 手写 `<table>` 无 sticky/hover |
@@ -2164,7 +2164,7 @@ MCP `audit.list_recent` 继续只用 `since`（Agent 常用「从某时起到现
 
 **toast 位置**：默认 **bottom-right**。在下面，不挡左侧导航，也不弹到右上角。成功 / info 约 3–4s 自动关；错误可手动关。登录页 401/429 仍可表单旁提示（未进 ToastProvider 的会话页）。
 
-**日期时间**：两个独立选择器（从 / 到），不是一个无标签控件。日历选日 + 时分输入；空值不传 query；有值 → 浏览器本地时区 RFC3339。坏值停前端，toast「请输入有效的日期和时间」。API 字段仍是 `since` / `until` 字符串，见 `SCHEMA.md §20.1`。
+**日期时间**：一个 Calendar `mode=range`（从 / 到同一控件）+ 两端时分。空值不传 query；有值 → 浏览器本地时区 RFC3339。坏值停前端，toast「请输入有效的日期和时间」。API 字段仍是 `since` / `until` 字符串，见 `SCHEMA.md §20.1`。
 
 **仍自写（领域，不是轮子）**
 
@@ -2370,7 +2370,7 @@ v0.1 完整验收（**不分版本**）：
 39. `proposal.update`（SCHEMA §12）：`pending` / `conflict` 可改字段并追加评论；`applied` / `rejected` / `approved` 拒绝。详情页先红绿 diff，再折叠表单。终态只读。
 40. Inbox 评论线程（SCHEMA §12.4 共用 Comment）+ 状态不可逆（`reviewing → pending` 非法；终态不能拖回）+ 卡片先预览再编辑。评论不改 status。非法拖拽拒绝并留原列。
 41. 后台知识搜索 `q` 可选；`kind` / `visibility` / `tag` 任一有值即可列出；全空才提示。`[清除]` 清全部条件 + 结果。MCP `query` 仍必填。后台 get 不加 `access_count`。
-42. 后台审计 `GET /api/audit/recent` 支持 `since`–`until` 区间。MCP `audit.list_recent` 只用 `since`。日期时间用 shadcn Calendar + Popover + 时分，不用 `datetime-local`。转 RFC3339 失败停前端，toast「请输入有效的日期和时间」。
+42. 后台审计 `GET /api/audit/recent` 支持 `since`–`until` 区间。MCP `audit.list_recent` 只用 `since`。日期用 Calendar `mode=range` + 两端时分，不用 `datetime-local`、不用两个独立日期框。转 RFC3339 失败停前端，toast「请输入有效的日期和时间」。
 43. Token 列表渲染 `description`（只列 active / grace；revoked 不展示）。签发 / 轮换明文只弹一次 + 复制成功态；轮换二次确认带 name；撤销确认即作废，不要输入 name。成功 / 失败 / 错误用 sonner toast（bottom-right），不用页顶错误条、不用右上角自写列表。
 44. System 进页 15s 轮询，离开停止。绿呼吸灯 / 红异常；刷新有「检查中…」+ 采样时间。
 45. Git 左侧线性提交树（不画多分支）；右侧占满剩余宽度。中文路径 UTF-8，不要 octal escape。
@@ -2439,9 +2439,9 @@ v0.1 完整验收（**不分版本**）：
 15. frontmatter 内部冲突 = 一律 conflict，不自动合并。
 16. 文档分层 = 设计文档 / SCHEMA.md / Workbase 不重复。
 17. 不分版本（v0.1 = 完整版）。
-18. 不重命名仓库（继续 jiangnan-blog）。
+18. 仓库名 = `Luo-root/jiangnan-blog-agent-workbase`（已从 `jiangnan-blog` 改名）。Go module = `github.com/Luo-root/jiangnan-blog-agent-workbase/mcp`。
 19. 后台 UX：Inbox 评论 + 先预览再编辑 + 四列色差 + 状态不可逆；Proposal 终态只读 + 先 diff 再表单 + `proposal.update`；审计 since–until；后台搜索 q 可选；Token description / 轮换二次确认 / 撤销即从列表消失 / 明文弹窗；操作反馈用 toast 不用页顶错误条；System 15s 轮询 + 呼吸灯；Git 提交树 + 右侧占满；模板 kind=inbox|proposal|token。
-20. 后台交互控件 = shadcn/ui（与博客同源）。toast = sonner、默认 bottom-right。日期 = Calendar + Popover + 时分，不用 datetime-local。不引 Ant Design / MUI。领域组件（看板 / Diff / 轻量 Markdown / 评论）仍自写。
+20. 后台交互控件 = shadcn/ui（与博客同源）。toast = sonner、默认 bottom-right。审计日期 = Calendar `mode=range` + 两端时分，不用 datetime-local、不用两个独立日期框。不引 Ant Design / MUI。领域组件（看板 / Diff / 轻量 Markdown / 评论）仍自写。
 ```
 
 ---

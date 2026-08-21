@@ -11,8 +11,8 @@
 | 模板 | [`config.example.yaml`](config.example.yaml) | 可启动的字段结构 |
 | 自描述 | `D:/Data/工作台/Workbase/` | Agent 看到的文案 |
 
-契约已按 PR 落地：`schema:` 配置、identity、Token SQLite、reindex mux、索引 SQLite 读路径、完整 ours 3-way / apply 分阶、热度 `Hot()`、审计 SQLite、webUI session 登录、audit / knowledge / system / git / templates 后台页。  
-不要把旧规格当现行：默认 9 条敏感正则、payload 当 ours、`noteID()` 去 `.md`、JSONL 审计、按 count 排热度、浏览器弹窗 Basic Auth。进程等这些 PR 合进 main 后再启。
+契约已落地：`schema:` 配置、identity、Token SQLite、reindex mux、索引 SQLite 读路径、完整 ours 3-way / apply 分阶、热度 `Hot()`、审计 SQLite、webUI session 登录、audit / knowledge / system / git / templates 后台页、shadcn/ui。  
+不要把旧规格当现行：默认 9 条敏感正则、payload 当 ours、`noteID()` 去 `.md`、JSONL 审计、按 count 排热度、浏览器弹窗 Basic Auth。Go module = `github.com/Luo-root/jiangnan-blog-agent-workbase/mcp`。
 
 ---
 
@@ -170,7 +170,7 @@ mcp.<domain> {
 
 审计：`{runtime}/audit/audit.sqlite` 的 `audit_log`。中间件在 `next()` 之后记；unauthorized / forbidden 也写。最小字段 ts / tool / client_id / scopes（实际授予）/ args_digest / result_status / duration_ms。不存 token 原文、args 原文、secret 正文。`audit.list_recent` 用 limit / since / tool / client_id / result_status 过滤，没有 `mode=detail|hashed`。MCP 只用 `since`。webUI `GET /api/audit/recent` 额外收 `until`。
 
-## 10. 本地跑（重构完成后）
+## 10. 本地跑
 
 ```powershell
 cd D:\Code\Front-end\博客\server\mcp
@@ -190,8 +190,7 @@ npm install
 npm run build   # 产出写入 ../internal/admin/static，由 Go embed
 ```
 
-VPS 部署见 [`../../deploy/mcp/`](../../deploy/mcp/) 与 [`../../deploy/README.md`](../../deploy/README.md)。  
-重构完成前不要把这份旧 binary 当可用 MCP。
+VPS 部署见 [`../../deploy/mcp/`](../../deploy/mcp/) 与 [`../../deploy/README.md`](../../deploy/README.md)。
 
 ## 11. 改字段
 
