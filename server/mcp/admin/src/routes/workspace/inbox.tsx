@@ -2,9 +2,13 @@ import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import { CommentThread, type Comment } from "../../components/comments";
 import { MarkdownPreview } from "../../components/markdown";
-import { Modal } from "../../components/modal";
+import { AppDialog } from "../../components/app-dialog";
 import { errText, useToast } from "../../components/toast";
 import { fillEmpty, loadTemplates, type Tpl } from "../../lib/templates";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { SimpleSelect } from "../../components/simple-select";
 
 type Item = {
   id: string;
@@ -85,9 +89,9 @@ export function InboxPage() {
           <h2 className="text-lg font-semibold text-ink-1">待办看板</h2>
           <p className="mt-1 text-xs text-ink-3">拖卡片换状态。非法拖拽会拒绝。终态仍可改正文和评论。</p>
         </div>
-        <button className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground" onClick={() => { setCreating(true); setDraft({ title: "", content: "", tags: "" }); setTplId(""); }}>
+        <Button size="sm" onClick={() => { setCreating(true); setDraft({ title: "", content: "", tags: "" }); setTplId(""); }}>
           + 新建待办
-        </button>
+        </Button>
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-4 gap-3">
         {COLS.map((col) => {
@@ -135,98 +139,94 @@ export function InboxPage() {
         })}
       </div>
 
-      {detail ? (
-        <Modal title={detail.title || "待办详情"} onClose={() => setDetail(null)} wide>
-          <p className="mb-3 font-mono text-[11px] text-ink-3">{detail.status} · {detail.created_by} · {(detail.updated_at || "").slice(0, 19)}</p>
-          {editing ? (
-            <textarea className="min-h-40 w-full rounded-lg border border-border p-2 text-sm" value={edit} onChange={(e) => setEdit(e.target.value)} />
-          ) : (
-            <MarkdownPreview text={detail.content} />
-          )}
-          <div className="mt-3 flex justify-end gap-2">
-            <button className="rounded-lg border border-border px-3 py-1.5 text-xs" onClick={() => setDetail(null)}>关闭</button>
+      <AppDialog title={detail?.title || "待办详情"} open={!!detail} onClose={() => setDetail(null)} wide>
+        {detail ? (
+          <>
+            <p className="mb-3 font-mono text-[11px] text-ink-3">{detail.status} · {detail.created_by} · {(detail.updated_at || "").slice(0, 19)}</p>
             {editing ? (
-              <button
-                className="rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground"
-                onClick={async () => {
-                  try {
-                    await api("/api/inbox/" + encodeURIComponent(detail.id), "PUT", { content: edit });
-                    await reload();
-                    await open(detail.id);
-                    toast.success("待办已保存");
-                  } catch (e) {
-                    toast.error(errText(e));
-                  }
-                }}
-              >保存</button>
+              <Textarea className="min-h-40" value={edit} onChange={(e) => setEdit(e.target.value)} />
             ) : (
-              <button className="rounded-lg border border-border px-3 py-1.5 text-xs" onClick={() => setEditing(true)}>编辑</button>
+              <MarkdownPreview text={detail.content} />
             )}
-          </div>
-          <CommentThread
-            comments={detail.comments || []}
-            onAppend={async (body) => {
-              await api("/api/inbox/" + encodeURIComponent(detail.id), "PUT", { comment: { body } });
-              await reload();
-              await open(detail.id);
-              toast.success("评论已追加");
-            }}
-          />
-        </Modal>
-      ) : null}
-
-      {creating ? (
-        <Modal title="新建待办" onClose={() => setCreating(false)}>
-          {tpls.length ? (
-            <label className="mb-3 block text-xs text-ink-2">
-              从模板填入
-              <select
-                className="mt-1 w-full rounded-lg border border-border px-2 py-1.5"
-                value={tplId}
-                onChange={(e) => {
-                  const id = e.target.value;
-                  setTplId(id);
-                  const t = tpls.find((x) => x.id === id);
-                  if (!t) return;
-                  setDraft((cur) => fillEmpty(cur, {
-                    title: t.title || "",
-                    content: t.content || "",
-                    tags: (t.tags || []).join(", "),
-                  }));
-                }}
-              >
-                <option value="">不使用模板</option>
-                {tpls.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
-            </label>
-          ) : null}
-          <input className="mb-2 w-full rounded-lg border border-border px-3 py-2 text-sm" placeholder="标题（选填）" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} />
-          <textarea className="min-h-40 w-full rounded-lg border border-border p-2 text-sm" value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })} placeholder="完整任务描述（必填）" />
-          <input className="mt-2 w-full rounded-lg border border-border px-3 py-2 text-sm" placeholder="标签，逗号分隔（选填）" value={draft.tags} onChange={(e) => setDraft({ ...draft, tags: e.target.value })} />
-          <div className="mt-3 flex justify-end gap-2">
-            <button className="rounded-lg border border-border px-3 py-1.5 text-xs" onClick={() => setCreating(false)}>取消</button>
-            <button
-              className="rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground"
-              onClick={async () => {
-                if (!draft.content.trim()) { toast.error("请填写待办正文"); return; }
-                try {
-                  await api("/api/inbox", "POST", {
-                    content: draft.content,
-                    title: draft.title,
-                    tags: draft.tags.split(",").map((s) => s.trim()).filter(Boolean),
-                    created_by: "webui",
-                  });
-                  setCreating(false);
-                  await reload();
-                  toast.success("待办已创建");
-                } catch (e) {
-                  toast.error(errText(e));
-                }
+            <div className="mt-3 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setDetail(null)}>关闭</Button>
+              {editing ? (
+                <Button
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      await api("/api/inbox/" + encodeURIComponent(detail.id), "PUT", { content: edit });
+                      await reload();
+                      await open(detail.id);
+                      toast.success("待办已保存");
+                    } catch (e) {
+                      toast.error(errText(e));
+                    }
+                  }}
+                >保存</Button>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => setEditing(true)}>编辑</Button>
+              )}
+            </div>
+            <CommentThread
+              comments={detail.comments || []}
+              onAppend={async (body) => {
+                await api("/api/inbox/" + encodeURIComponent(detail.id), "PUT", { comment: { body } });
+                await reload();
+                await open(detail.id);
+                toast.success("评论已追加");
               }}
-            >保存</button>
+            />
+          </>
+        ) : null}
+      </AppDialog>
+
+      <AppDialog title="新建待办" open={creating} onClose={() => setCreating(false)}>
+        {tpls.length ? (
+          <div className="mb-3">
+            <p className="mb-1 text-xs text-ink-2">从模板填入</p>
+            <SimpleSelect
+              value={tplId}
+              onValue={(id) => {
+                setTplId(id);
+                const t = tpls.find((x) => x.id === id);
+                if (!t) return;
+                setDraft((cur) => fillEmpty(cur, {
+                  title: t.title || "",
+                  content: t.content || "",
+                  tags: (t.tags || []).join(", "),
+                }));
+              }}
+              items={[{ value: "", label: "不使用模板" }, ...tpls.map((t) => ({ value: t.id, label: t.name }))]}
+            />
           </div>
-        </Modal>
-      ) : null}
+        ) : null}
+        <Input className="mb-2" placeholder="标题（选填）" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} />
+        <Textarea className="min-h-40" value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })} placeholder="完整任务描述（必填）" />
+        <Input className="mt-2" placeholder="标签，逗号分隔（选填）" value={draft.tags} onChange={(e) => setDraft({ ...draft, tags: e.target.value })} />
+        <div className="mt-3 flex justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={() => setCreating(false)}>取消</Button>
+          <Button
+            size="sm"
+            onClick={async () => {
+              if (!draft.content.trim()) { toast.error("请填写待办正文"); return; }
+              try {
+                await api("/api/inbox", "POST", {
+                  content: draft.content,
+                  title: draft.title,
+                  tags: draft.tags.split(",").map((s) => s.trim()).filter(Boolean),
+                  created_by: "webui",
+                });
+                setCreating(false);
+                await reload();
+                toast.success("待办已创建");
+              } catch (e) {
+                toast.error(errText(e));
+              }
+            }}
+          >保存</Button>
+        </div>
+      </AppDialog>
     </section>
   );
 }

@@ -1,5 +1,9 @@
 import { FormEvent, useState } from "react";
 import { ApiError, login } from "../lib/api";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export function LoginPage() {
   const [user, setUser] = useState("");
@@ -25,38 +29,29 @@ export function LoginPage() {
 
   return (
     <div className="flex min-h-full items-center justify-center bg-background px-6">
-      <form onSubmit={onSubmit} className="w-full max-w-sm rounded-2xl border border-border bg-card p-8 shadow-sm">
-        <p className="font-mono text-[11px] tracking-[0.18em] text-ink-4 uppercase">Workbase Admin</p>
-        <h1 className="mt-2 text-2xl font-semibold text-ink-1">遇见江楠 · 后台</h1>
-        <p className="mt-2 text-sm text-ink-3">独立登录页，session token，不用浏览器弹窗。</p>
-        <label className="mt-6 block text-xs font-medium text-ink-2">
-          用户
-          <input
-            className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
-            value={user}
-            autoComplete="username"
-            onChange={(e) => setUser(e.target.value)}
-          />
-        </label>
-        <label className="mt-4 block text-xs font-medium text-ink-2">
-          口令
-          <input
-            type="password"
-            className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
-            value={password}
-            autoComplete="current-password"
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </label>
-        {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
-        <button
-          type="submit"
-          disabled={busy || !user || !password}
-          className="mt-6 w-full rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
-        >
-          {busy ? "登录中…" : "登录"}
-        </button>
-      </form>
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <p className="font-mono text-[11px] tracking-[0.18em] text-ink-4 uppercase">Workbase Admin</p>
+          <CardTitle className="text-2xl">遇见江楠 · 后台</CardTitle>
+          <CardDescription>独立登录页，session token，不用浏览器弹窗。</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={onSubmit}>
+            <Label className="block text-xs">
+              用户
+              <Input className="mt-1.5" value={user} autoComplete="username" onChange={(e) => setUser(e.target.value)} />
+            </Label>
+            <Label className="mt-4 block text-xs">
+              口令
+              <Input type="password" className="mt-1.5" value={password} autoComplete="current-password" onChange={(e) => setPassword(e.target.value)} />
+            </Label>
+            {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
+            <Button type="submit" disabled={busy || !user || !password} className="mt-6 w-full">
+              {busy ? "登录中…" : "登录"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

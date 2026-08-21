@@ -1,6 +1,11 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import { errText, useToast } from "../../components/toast";
+import { DateTimePicker, dateToRFC3339 } from "../../components/date-time-picker";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 type Entry = {
   ts: string;
@@ -15,20 +20,13 @@ type Entry = {
   commit?: string;
 };
 
-function toRFC3339(local: string): string | null {
-  if (!local) return "";
-  const d = new Date(local);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString();
-}
-
 export function AuditPage() {
   const toast = useToast();
   const [rows, setRows] = useState<Entry[]>([]);
   const [tool, setTool] = useState("");
   const [client, setClient] = useState("");
-  const [since, setSince] = useState("");
-  const [until, setUntil] = useState("");
+  const [since, setSince] = useState<Date | null>(null);
+  const [until, setUntil] = useState<Date | null>(null);
 
   async function load(e?: FormEvent) {
     e?.preventDefault();
@@ -36,12 +34,12 @@ export function AuditPage() {
     if (tool) q.set("tool", tool);
     if (client) q.set("client_id", client);
     if (since) {
-      const v = toRFC3339(since);
+      const v = dateToRFC3339(since);
       if (v == null) { toast.error("请输入有效的日期和时间"); return; }
       if (v) q.set("since", v);
     }
     if (until) {
-      const v = toRFC3339(until);
+      const v = dateToRFC3339(until);
       if (v == null) { toast.error("请输入有效的日期和时间"); return; }
       if (v) q.set("until", v);
     }
@@ -57,46 +55,42 @@ export function AuditPage() {
     <section className="flex h-full flex-col p-6">
       <h2 className="text-lg font-semibold text-ink-1">审计日志</h2>
       <p className="mt-1 text-xs text-ink-3">最小字段集。不展示 token / args 原文。按 client / tool / since–until 过滤。</p>
-      <form onSubmit={load} className="mt-4 flex flex-wrap gap-2">
-        <input className="rounded-lg border border-border px-3 py-2 font-mono text-xs" placeholder="tool" value={tool} onChange={(e) => setTool(e.target.value)} />
-        <input className="rounded-lg border border-border px-3 py-2 font-mono text-xs" placeholder="client_id" value={client} onChange={(e) => setClient(e.target.value)} />
-        <label className="flex items-center gap-1 text-xs text-ink-3">since
-          <input type="datetime-local" className="rounded-lg border border-border px-3 py-2 font-mono text-xs" value={since} onChange={(e) => setSince(e.target.value)} />
-        </label>
-        <label className="flex items-center gap-1 text-xs text-ink-3">until
-          <input type="datetime-local" className="rounded-lg border border-border px-3 py-2 font-mono text-xs" value={until} onChange={(e) => setUntil(e.target.value)} />
-        </label>
-        <button className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">刷新</button>
+      <form onSubmit={load} className="mt-4 flex flex-wrap items-center gap-2">
+        <Input className="h-8 w-40 font-mono text-xs" placeholder="tool" value={tool} onChange={(e) => setTool(e.target.value)} />
+        <Input className="h-8 w-40 font-mono text-xs" placeholder="client_id" value={client} onChange={(e) => setClient(e.target.value)} />
+        <DateTimePicker label="从" value={since} onChange={setSince} />
+        <DateTimePicker label="到" value={until} onChange={setUntil} />
+        <Button type="submit" size="sm">刷新</Button>
       </form>
       <div className="mt-4 min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card">
-        <table className="w-full text-left text-xs">
-          <thead className="sticky top-0 bg-muted font-mono text-[10px] uppercase tracking-wider text-ink-4">
-            <tr>
-              <th className="px-3 py-2">ts</th>
-              <th className="px-3 py-2">tool</th>
-              <th className="px-3 py-2">client</th>
-              <th className="px-3 py-2">status</th>
-              <th className="px-3 py-2">ms</th>
-              <th className="px-3 py-2">digest</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>ts</TableHead>
+              <TableHead>tool</TableHead>
+              <TableHead>client</TableHead>
+              <TableHead>status</TableHead>
+              <TableHead>ms</TableHead>
+              <TableHead>digest</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.length === 0 ? (
-              <tr><td className="px-3 py-8 text-center text-ink-4" colSpan={6}>暂无记录</td></tr>
+              <TableRow><TableCell className="py-8 text-center text-ink-4" colSpan={6}>暂无记录</TableCell></TableRow>
             ) : rows.map((e, i) => (
-              <tr key={i} className="border-t border-border">
-                <td className="px-3 py-2 font-mono text-[11px] whitespace-nowrap">{(e.ts || "").replace("T", " ").slice(0, 19)}</td>
-                <td className="px-3 py-2 font-mono">{e.tool}</td>
-                <td className="px-3 py-2 font-mono text-ink-3">{e.client_id || "—"}</td>
-                <td className="px-3 py-2">
-                  <span className={e.result_status === "success" ? "text-accent" : "text-destructive"}>{e.result_status}</span>
-                </td>
-                <td className="px-3 py-2 font-mono">{e.duration_ms}</td>
-                <td className="max-w-[180px] truncate px-3 py-2 font-mono text-ink-4" title={e.args_digest}>{e.args_digest || "—"}</td>
-              </tr>
+              <TableRow key={i}>
+                <TableCell className="font-mono text-[11px] whitespace-nowrap">{(e.ts || "").replace("T", " ").slice(0, 19)}</TableCell>
+                <TableCell className="font-mono">{e.tool}</TableCell>
+                <TableCell className="font-mono text-ink-3">{e.client_id || "—"}</TableCell>
+                <TableCell>
+                  <Badge variant={e.result_status === "success" ? "secondary" : "destructive"}>{e.result_status}</Badge>
+                </TableCell>
+                <TableCell className="font-mono">{e.duration_ms}</TableCell>
+                <TableCell className="max-w-[180px] truncate font-mono text-ink-4" title={e.args_digest}>{e.args_digest || "—"}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     </section>
   );

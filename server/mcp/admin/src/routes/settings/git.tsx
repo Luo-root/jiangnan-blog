@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import { UnifiedDiff } from "../../components/diff-viewer";
 import { errText, useToast } from "../../components/toast";
+import { Button } from "@/components/ui/button";
 
 type Commit = { sha: string; author: string; date: string; subject: string };
 
@@ -32,17 +33,18 @@ export function GitPage() {
           <div className="space-y-1">
             {list.length === 0 ? <p className="text-sm text-ink-4">暂无 commit</p> : null}
             {list.map((c) => (
-              <button
+              <Button
                 key={c.sha}
+                variant={sha === c.sha ? "secondary" : "ghost"}
+                className="relative h-auto w-full justify-start gap-3 px-2 py-2"
                 onClick={() => open(c).catch((e) => toast.error(errText(e)))}
-                className={`relative flex w-full gap-3 rounded-lg px-2 py-2 text-left ${sha === c.sha ? "bg-primary/10" : "hover:bg-muted"}`}
               >
-                <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full border-2 ${sha === c.sha ? "border-primary bg-primary" : "border-ink-4 bg-card"}`} />
-                <span className="min-w-0">
-                  <span className="block truncate text-[13px] text-ink-1">{c.subject}</span>
-                  <span className="mt-0.5 block font-mono text-[10px] text-ink-3">{c.sha.slice(0, 8)} · {c.author} · {(c.date || "").slice(0, 10)}</span>
+                <span className={`mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full border-2 ${sha === c.sha ? "border-primary bg-primary" : "border-ink-4 bg-card"}`} />
+                <span className="min-w-0 text-left">
+                  <span className="block truncate text-[13px] font-normal text-ink-1">{c.subject}</span>
+                  <span className="mt-0.5 block font-mono text-[10px] font-normal text-ink-3">{c.sha.slice(0, 8)} · {c.author} · {(c.date || "").slice(0, 10)}</span>
                 </span>
-              </button>
+              </Button>
             ))}
           </div>
         </div>

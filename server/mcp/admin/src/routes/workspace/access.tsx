@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import { errText, useToast } from "../../components/toast";
+import { Card, CardContent } from "@/components/ui/card";
 
 type Heat = { resource_id: string; count: number; last_access: string; score: number };
 
@@ -42,9 +43,11 @@ export function AccessPage() {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="text-xs text-ink-3">{label}</div>
-      <div className="mt-1 font-mono text-xl text-primary">{value}</div>
-    </div>
+    <Card>
+      <CardContent className="p-4">
+        <div className="text-xs text-ink-3">{label}</div>
+        <div className="mt-1 font-mono text-xl text-primary">{value}</div>
+      </CardContent>
+    </Card>
   );
 }

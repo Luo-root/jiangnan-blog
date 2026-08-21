@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import { navigate } from "../../lib/nav";
 import { errText, useToast } from "../../components/toast";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 
 type Proposal = {
   id: string;
@@ -37,18 +39,16 @@ export function ProposalsPage() {
       <div className="mt-4 space-y-2">
         {list.length === 0 ? <p className="text-sm text-ink-4">暂无 Proposal</p> : null}
         {list.map((p) => (
-          <button
-            key={p.id}
-            onClick={() => navigate("/workspace/proposal/" + encodeURIComponent(p.id))}
-            className="block w-full rounded-xl border border-border bg-card p-4 text-left hover:border-primary/40"
-          >
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-xs text-primary">{p.id}</span>
-              <span className={`rounded-full px-2 py-0.5 font-mono text-[10px] ${CLS[p.status] || "bg-muted"}`}>{LABEL[p.status] || p.status}</span>
-            </div>
-            <div className="mt-2 text-sm text-ink-1">{p.reason || "未填写原因"}</div>
-            <div className="mt-2 font-mono text-[11px] text-ink-3">{p.target?.path || "未指定"} · {p.created_by}</div>
-          </button>
+          <Card key={p.id} className="cursor-pointer hover:border-primary/40" onClick={() => navigate("/workspace/proposal/" + encodeURIComponent(p.id))}>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs text-primary">{p.id}</span>
+                <Badge className={CLS[p.status] || ""}>{LABEL[p.status] || p.status}</Badge>
+              </div>
+              <div className="mt-2 text-sm text-ink-1">{p.reason || "未填写原因"}</div>
+              <div className="mt-2 font-mono text-[11px] text-ink-3">{p.target?.path || "未指定"} · {p.created_by}</div>
+            </CardContent>
+          </Card>
         ))}
       </div>
     </section>

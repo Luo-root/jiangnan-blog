@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../../lib/api";
 import { errText, useToast } from "../../components/toast";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type Health = {
   ok: boolean;
@@ -63,9 +65,9 @@ export function SystemPage() {
           <h2 className="text-lg font-semibold text-ink-1">System 健康</h2>
           <p className="mt-1 text-xs text-ink-3">进页开始 15s 轮询，离开停止。灯、采样时间、按钮态三件套。</p>
         </div>
-        <button disabled={checking} className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50" onClick={() => load(true)}>
+        <Button size="sm" disabled={checking} onClick={() => load(true)}>
           {checking ? "检查中…" : flash ? "已更新" : "刷新"}
-        </button>
+        </Button>
       </div>
       <div className="mt-4 flex items-center gap-2 text-sm">
         <span className={`inline-block h-3 w-3 rounded-full ${ok ? "breath-ok" : "breath-bad"}`} />
@@ -82,28 +84,28 @@ export function SystemPage() {
             <Stat label="Admin" value={h.listen?.admin || "—"} />
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3">
-            <Card title="索引条数">
+            <Panel title="索引条数">
               {Object.entries(h.index || {}).map(([k, v]) => (
                 <Row key={k} k={k} v={String(v)} />
               ))}
-            </Card>
-            <Card title="SQLite">
+            </Panel>
+            <Panel title="SQLite">
               {Object.entries(h.sqlite || {}).map(([k, v]) => (
                 <Row key={k} k={k} v={fmtBytes(v)} />
               ))}
-            </Card>
-            <Card title="磁盘">
+            </Panel>
+            <Panel title="磁盘">
               <Row k="path" v={h.disk?.path || "—"} />
               <Row k="free" v={fmtBytes(h.disk?.free_bytes)} />
               <Row k="total" v={fmtBytes(h.disk?.total_bytes)} />
               {h.disk?.error ? <Row k="error" v={h.disk.error} /> : null}
-            </Card>
-            <Card title="路径">
+            </Panel>
+            <Panel title="路径">
               {Object.entries(h.paths || {}).map(([k, v]) => (
                 <Row key={k} k={k} v={v || "—"} />
               ))}
               <Row k="HEAD" v={h.git_head || "—"} />
-            </Card>
+            </Panel>
           </div>
         </>
       )}
@@ -113,18 +115,22 @@ export function SystemPage() {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="text-xs text-ink-3">{label}</div>
-      <div className="mt-1 truncate font-mono text-lg text-primary">{value}</div>
-    </div>
+    <Card>
+      <CardContent className="p-4">
+        <div className="text-xs text-ink-3">{label}</div>
+        <div className="mt-1 truncate font-mono text-lg text-primary">{value}</div>
+      </CardContent>
+    </Card>
   );
 }
-function Card({ title, children }: { title: string; children: ReactNode }) {
+function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <h3 className="mb-2 text-sm font-semibold text-ink-1">{title}</h3>
-      {children}
-    </div>
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
   );
 }
 function Row({ k, v }: { k: string; v: string }) {
