@@ -31,6 +31,7 @@ export function SystemPage() {
   const [fail, setFail] = useState("");
   const [sampled, setSampled] = useState("");
   const [flash, setFlash] = useState(false);
+  const [prompt, setPrompt] = useState("");
 
   async function load(manual = false) {
     setChecking(true);
@@ -53,6 +54,7 @@ export function SystemPage() {
   }
   useEffect(() => {
     load();
+    api<{ prompt: string }>("/api/agent-prompt").then((r) => setPrompt(r.prompt || "")).catch((e) => toast.error(errText(e)));
     const t = window.setInterval(() => load(), 15000);
     return () => window.clearInterval(t);
   }, []);
@@ -107,6 +109,27 @@ export function SystemPage() {
               <Row k="HEAD" v={h.git_head || "—"} />
             </Panel>
           </div>
+          <Card className="mt-4">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm">Agent 系统提示词</CardTitle>
+              <Button
+                size="sm"
+                disabled={!prompt}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(prompt);
+                    toast.success("已复制 agent_prompt。贴进 Agent 系统提示词。");
+                  } catch {
+                    toast.error("复制失败，请手动选中");
+                  }
+                }}
+              >复制</Button>
+            </CardHeader>
+            <CardContent>
+              <p className="mb-2 text-sm text-ink-3">从 Vault 即时拼装。连上 MCP 后也可调 workbase.identity 拿同一份。改 operating-loop.md 再刷新本页。</p>
+              <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-muted p-3 font-mono text-[12px] leading-5">{prompt || "加载中…"}</pre>
+            </CardContent>
+          </Card>
         </>
       )}
     </section>

@@ -91,6 +91,7 @@ func main() {
 		config.IdentityVersion,
 		server.WithToolCapabilities(true),
 		server.WithRecovery(),
+		server.WithInstructions(tools.InitializeInstructions),
 	)
 	tools.Register(mcpSrv, tools.Deps{
 		Idx:          idx,
@@ -148,6 +149,7 @@ func main() {
 		AuditDB:          cfg.AuditDB(),
 		AuthDB:           cfg.AuthDB(),
 		TemplatesDir:     cfg.TemplatesDir(),
+		WorkbaseRoot:     cfg.Workbase.Root,
 	}
 	adminSrv := &http.Server{Addr: cfg.Admin.Listen, Handler: adminHandler}
 

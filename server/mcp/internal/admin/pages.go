@@ -12,6 +12,7 @@ import (
 	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/apply"
 	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/audit"
 	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/search"
+	"github.com/Luo-root/jiangnan-blog-agent-workbase/mcp/internal/tools"
 )
 
 func (h *Handler) listAudit(w http.ResponseWriter, r *http.Request) {
@@ -483,4 +484,13 @@ func diskUsage(path string) map[string]any {
 	out["free_bytes"] = free
 	out["total_bytes"] = total
 	return out
+}
+
+func (h *Handler) agentPrompt(w http.ResponseWriter, r *http.Request) {
+	prompt, err := tools.BuildAgentPrompt(h.WorkbaseRoot, tools.ToolNames())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"prompt": prompt})
 }

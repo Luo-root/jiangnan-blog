@@ -252,7 +252,8 @@ ops:audit           # 查看审计摘要
     "visibility_policy": {...},
     "getting_started": "...",
     "critical_rules": [...],
-    "see_also": [...]
+    "see_also": [...],
+    "agent_prompt": "..."
   },
   "auth": {
     "client_id": "minimax-code",
@@ -280,6 +281,7 @@ ops:audit           # 查看审计摘要
 | `getting_started` | string | vault | yes | `Workbase/mcps/jiangnan-workbase.md` `## Purpose` |
 | `critical_rules` | []string | vault | yes | 同上 `## Security` 段 `-` 列表 |
 | `see_also` | []string | vault | no | 同上 `## Source` 段链接 |
+| `agent_prompt` | string | vault 即时拼 | yes | 给 Agent 的**可整段粘贴**系统提示词。拼法见 §4.6。不是 Go 硬编码文案 |
 
 **读取策略**：
 
@@ -312,6 +314,30 @@ ops:audit           # 查看审计摘要
 ```
 
 4 行字符串来自 `config.yaml` `schema.visibility_policy`。这是结构化配置，不进 Vault。
+
+### §4.6 `agent_prompt` 拼法
+
+给 Agent 的系统提示词。**不是第 21 个工具**。`workbase.identity` 每次即时拼，后台 `GET /api/agent-prompt` 同一份拼法（列出全部工具，不绑某个 token）。
+
+拼装顺序（Markdown，可整段粘贴）：
+
+1. 标题：`# {name}` + `description`
+2. `## 这是什么` ← `## Purpose`
+3. `## 操作环` ← `Workbase/context/operating-loop.md` 去 frontmatter 后的正文。文件不存在 → 这一节省略，**不**用 Go 字面量顶上
+4. `## 红线` ← `## Security` 列表
+5. `## 你能调用的工具` ← 当前 token 的 `auth.allowed_tools`（后台复制页 = 全部已注册工具）
+6. `## 启动` ← 固定三步（协议层，允许在拼装函数里写死，不是 Workbase 描述）：先 `workbase.identity`，再 `context.startup`，写入走 proposal / inbox
+7. `## Source` ← `see_also`
+
+Go **不许**把「以 Obsidian 为事实源」这类描述写成字符串常量。骨架标题（`## 这是什么` / `## 操作环`）是结构，可以写死。
+
+MCP `initialize.instructions`（mcp-go `WithInstructions`）只放**短引导**，不是完整 prompt：
+
+```text
+已连接 Jiangnan Workbase MCP。先调用 workbase.identity，把返回的 workbase.agent_prompt 整段贴进系统提示词，再调用 context.startup。本 MCP 是长期记忆基座，不要直接写 Vault，写入走 proposal.create / inbox.append。
+```
+
+多数宿主不会把 `instructions` 当系统提示词。完整契约以 `agent_prompt` 为准；短引导只负责告诉 Agent「去拿那一份」。
 
 ### §4.5 auth 块（当前 token 元数据）
 

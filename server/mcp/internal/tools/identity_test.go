@@ -137,6 +137,9 @@ func TestIdentityReadsVaultAndPolicyLive(t *testing.T) {
 	if !strings.Contains(fmtString(wb["description"]), "工作基座") {
 		t.Fatalf("desc = %v", wb["description"])
 	}
+	if prompt := fmtString(wb["agent_prompt"]); !strings.Contains(prompt, "Jiangnan Workbase MCP") || !strings.Contains(prompt, "context.startup") {
+		t.Fatalf("agent_prompt = %q", prompt)
+	}
 	if got := policyPublic(wb["visibility_policy"]); got != "可公开展示与索引" {
 		t.Fatalf("policy = %v", wb["visibility_policy"])
 	}
@@ -153,6 +156,48 @@ func TestIdentityReadsVaultAndPolicyLive(t *testing.T) {
 	}
 	if !strings.Contains(fmtString(wb2["description"]), "立刻可见") {
 		t.Fatalf("live desc = %v", wb2["description"])
+	}
+}
+
+func TestBuildAgentPromptIncludesLoopAndTools(t *testing.T) {
+	root := t.TempDir()
+	writeVault(t, root, "Workbase/mcps/jiangnan-workbase.md", sampleMD)
+	writeVault(t, root, "Workbase/context/operating-loop.md", "---\nid: operating-loop\nkind: context_pack\n---\n\n# Agent 操作环\n\n先搜再写。\n")
+	prompt, err := BuildAgentPrompt(filepath.Join(root, "Workbase"), []string{"workbase.identity", "context.startup"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"# Jiangnan Workbase MCP",
+		"## 这是什么",
+		"以 Obsidian Vault 为事实源",
+		"## 操作环",
+		"先搜再写",
+		"## 红线",
+		"挡未授权的是 token + scope + visibility",
+		"`workbase.identity`",
+		"`context.startup`",
+		"## 启动",
+		"proposal.create",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
+func TestBuildAgentPromptOmitsMissingLoop(t *testing.T) {
+	root := t.TempDir()
+	writeVault(t, root, "Workbase/mcps/jiangnan-workbase.md", sampleMD)
+	prompt, err := BuildAgentPrompt(filepath.Join(root, "Workbase"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(prompt, "## 操作环") {
+		t.Fatalf("missing loop file should omit section:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "当前 token 没有可用工具") {
+		t.Fatalf("empty tools: %s", prompt)
 	}
 }
 
