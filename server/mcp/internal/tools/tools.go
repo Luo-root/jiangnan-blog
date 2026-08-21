@@ -112,7 +112,7 @@ func Register(srv *server.MCPServer, d Deps) {
 	r := &depsHolder{d}
 
 	srv.AddTool(mcp.NewTool("workbase.identity",
-		mcp.WithDescription("返回 Workbase 自描述 + 当前 token 元数据。描述性字段从 vault 即时读。"),
+		mcp.WithDescription("返回 Workbase 自描述 + 当前 token 元数据 + 可粘贴 agent_prompt。描述性字段从 vault 即时读。"),
 	), r.handleIdentity)
 
 	srv.AddTool(mcp.NewTool("context.startup",

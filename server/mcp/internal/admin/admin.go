@@ -51,6 +51,7 @@ type Handler struct {
 	AuditDB          string
 	AuthDB           string
 	TemplatesDir     string
+	WorkbaseRoot     string
 }
 
 // ServeHTTP 路由分发。
@@ -121,6 +122,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.getKnowledge(w, r)
 	case path == "api/system/health" && r.Method == http.MethodGet:
 		h.systemHealth(w, r)
+	case path == "api/agent-prompt" && r.Method == http.MethodGet:
+		h.agentPrompt(w, r)
 	case path == "api/git/history" && r.Method == http.MethodGet:
 		h.gitHistory(w, r)
 	case strings.HasPrefix(path, "api/git/diff/") && r.Method == http.MethodGet:

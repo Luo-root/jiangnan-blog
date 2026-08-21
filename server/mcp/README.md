@@ -65,7 +65,7 @@ read:context / read:knowledge / read:project / read:registry
 read:inbox / write:proposal / write:inbox / ops:audit
 ```
 
-- `workbase.identity`：任意有效 token（合并原 `workbase.manifest` + `workbase.whoami`）
+- `workbase.identity`：任意有效 token（合并原 `workbase.manifest` + `workbase.whoami`）。返回可粘贴的 `agent_prompt`（从 Vault 即时拼）
 - `write:proposal` 同时覆盖 create / list / get / update
 - `admin:reindex` **不是** Agent scope。Token UI 不展示、不签发
 
