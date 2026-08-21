@@ -182,6 +182,7 @@ ops:audit           # 查看审计摘要
 | `proposal.create` | `write:proposal` | medium / high |
 | `proposal.list` | `write:proposal` | medium |
 | `proposal.get` | `write:proposal` | medium / high |
+| `proposal.update` | `write:proposal` | medium / high |
 | `inbox.append` | `write:inbox` | low |
 | `inbox.update` | `write:inbox` | low |
 | `inbox.list` | `read:inbox` | low |
@@ -294,7 +295,7 @@ ops:audit           # 查看审计摘要
 | `project` | `project.list` 工具已注册 |
 | `skill_registry` | `skill.list` 工具已注册 |
 | `mcp_registry` | `mcp.list` 工具已注册 |
-| `proposal` | `proposal.create` 工具已注册 |
+| `proposal` | `proposal.create` 工具已注册（含 list / get / update） |
 | `inbox` | `inbox.append` 工具已注册 |
 | `direct_write` | **始终 false**（v0.1 不允许 Agent 绕过 proposal 写入） |
 | `vector_search` | **始终 false**（不引入向量库） |
@@ -484,6 +485,19 @@ recency          float  时间衰减权重
 | `scope` | `all` | 不在 `all` / `public` / `private` → `invalid_argument`，**不**回落 `all` |
 
 `kind=["article","project"]` → 丢掉 `project`，搜 `article`。`kind=["project"]` → 空结果，不是默认的 note+article。Agent 以为带了 project 却搜到文章，是假结果。
+
+### §7.8 后台搜索（webUI，不是本工具）
+
+`GET /api/knowledge/search` 直扫 `notes` 表，**不过** MCP `kind` 门禁（管理员可跨 kind）。和 §7.1 的差异只写这里：
+
+| 参数 | MCP `knowledge.search` | 后台 `/api/knowledge/search` |
+|---|---|---|
+| 关键词 | `query` **必填** | `q` **可选** |
+| kind | 只认 note/article | `note` / `article` / `project` / `skill` / `mcp_server` / `context_pack` / 空=全部 |
+| visibility | 走 `scope` | 独立 `visibility` 过滤，含 secret（管理员） |
+| 无关键词 | 非法 | `kind` / `visibility` / `tag` 任一有值即可列出；全空才提示「输入关键词或选一个过滤条件」 |
+
+后台 `[清除]` 清 `q` + kind + visibility + tag + 排序（回 `score`）+ 结果。不是只清输入框。后台 get **不** `Hit()`。
 
 ---
 
@@ -695,6 +709,63 @@ list 默认出 public + private + draft。secret 不进 list。`mcp.get` 对 dra
 
 ---
 
+## §12. proposal.update 字段映射
+
+Agent / webUI 改尚未落盘的 proposal。`applied` / `rejected` 是终态，不能走本工具。正在 `approved`（apply 进行中）也不能改。
+
+### §12.1 请求
+
+| 字段 | 类型 | 必含 | 说明 |
+|---|---|---|---|
+| `id` | string | yes | proposal id |
+| `reason` | string | no | 修改原因 |
+| `target` | object | no | 改目标。给了就整段替换 `type` / `path`（及可选 `id`） |
+| `operation` | object | no | 改操作。给了就整段替换 `type` / `section` |
+| `payload` | object | no | 改内容。给了就整段替换 `format` / `content` |
+| `comment` | object | no | 追加一条评论。形状见 §12.4。有 `body` 就 append，不能改历史 |
+
+至少要有 `reason` / `target` / `operation` / `payload` / `comment` 之一，否则 `required field missing`。
+
+### §12.2 允许的 status
+
+```text
+pending   → 可改字段、可追加评论
+conflict  → 可改字段、可追加评论（救回前先改 payload）
+approved  → 拒绝（apply 进行中）
+applied   → 拒绝（终态，禁止再 apply）
+rejected  → 拒绝（终态）
+```
+
+评论 **不** 改 status。人审不够看就留评论；Agent 改完 payload 并回复；人再批准。
+
+### §12.3 响应
+
+与 `proposal.get` 相同（含更新后的 `diff` / `comments`）。
+
+### §12.4 Comment 对象（Inbox / Proposal 共用）
+
+| 字段 | 类型 | 必含 | 说明 |
+|---|---|---|---|
+| `id` | string | yes | `cmt_YYYYMMDD_HHMMSS_fff`。服务端生成 |
+| `author_type` | enum | yes | `human` = webUI 登录用户；`agent` = MCP token |
+| `author` | string | yes | human → admin user；agent → token name（`created_by`） |
+| `at` | RFC3339 | yes | 写入时间 |
+| `body` | string | yes | Markdown。空 / 只空白 → `required field comment.body missing` |
+| `reply_to` | string | no | 回复的评论 id。不校验必须存在（线程扁平展示，这个字段给人看引用） |
+
+评论只追加。没有 edit / delete。敏感模式开启且 body 命中 → 响应 `warnings`，照样写入。Inbox 的 comments 进 `{id}.md` frontmatter；Proposal 的 comments 进 proposal 落盘 yaml。都不进 Vault 正式正文。
+
+### §12.5 错误
+
+| 情况 | 错误 |
+|---|---|
+| id 不存在 | `proposal not found: <id>` |
+| status 不在 pending / conflict | `invalid status transition: <status> is terminal or in-flight` |
+| 五个可选字段都空 | `required field missing` |
+| `comment.body` 空白 | `required field comment.body missing` |
+
+---
+
 ## §13. proposal.create 字段映射
 
 ### §13.1 请求
@@ -708,7 +779,7 @@ list 默认出 public + private + draft。secret 不进 list。`mcp.get` 对 dra
 | `operation.type` | string | yes | `create_file` / `append` / `append_section` / `patch_section` / `register_item` |
 | `operation.section` | string | no | `append_section` / `patch_section` 必填 |
 | `payload.format` | string | yes | 固定 `markdown` |
-| `payload.content` | string | yes | 内容（`create_file` 是完整内容；`append` 是追加内容；`append_section` / `patch_section` 是段内容；`register_item` 是 frontmatter + 模板正文） |
+| `payload.content` | string | yes | 内容（`create_file` 是完整**文件**内容；`append` 是追加内容；`append_section` / `patch_section` 是段内容；`register_item` 是 frontmatter + 模板正文）。`create_file` / `register_item` 的 `target.path` 必须是文件路径，不是空目录。父目录不存在时 apply 用 `MkdirAll` 建父目录，这是落盘副作用，没有 `mkdir` operation |
 | `reason` | string | no | 创建原因，审计用 |
 | `risk.level` | string | no | `low` / `medium` / `high` |
 | `risk.reasons` | []string | no | 风险原因 |
@@ -728,6 +799,7 @@ list 默认出 public + private + draft。secret 不进 list。`mcp.get` 对 dra
 | `created_by` | string | yes | 客户端 id（从 token 解出） |
 | `diff` | string | yes | preview / diff 文本 |
 | `validation` | object | yes | 各项校验结果 |
+| `comments` | []Comment | yes | 初始 `[]`。形状见 §12.4 |
 
 ### §13.3 错误
 
@@ -822,6 +894,7 @@ list 默认出 public + private + draft。secret 不进 list。`mcp.get` 对 dra
 | `validation` | object | yes | 校验结果 |
 | `diff` | string | yes | preview / diff 文本 |
 | `receipt` | object | no | apply 后才有 |
+| `comments` | []Comment | yes | 评论线程，时间正序。无评论 = `[]` |
 
 ### §15.3 receipt 字段
 
@@ -859,6 +932,7 @@ list 默认出 public + private + draft。secret 不进 list。`mcp.get` 对 dra
 | `title` | string | no | 透传 |
 | `content` | string | yes | 透传 |
 | `tags` | []string | no | 透传 |
+| `comments` | []Comment | yes | 初始 `[]` |
 | `warnings` | []string | no | 运行时扫描 `content` 的结果。敏感模式开启且命中时有值。**不写入 `{id}.md`**，每次读再扫。默认关则省略。**不拒绝** |
 
 ### §16.3 错误
@@ -881,7 +955,10 @@ list 默认出 public + private + draft。secret 不进 list。`mcp.get` 对 dra
 | `title` | string | no | 修改标题 |
 | `content` | string | no | 修改正文 |
 | `tags` | []string | no | 修改标签 |
-| `status` | enum | no | 状态变更：`pending` / `reviewing` / `done` / `abandoned` |
+| `status` | enum | no | 状态变更：`pending` / `reviewing` / `done` / `abandoned`。必须是合法转换，见 §17.2 |
+| `comment` | object | no | 追加一条评论（§12.4）。有 `body` 就 append。评论不改 status |
+
+`title` / `content` / `tags` / `status` / `comment` 至少一项，否则 `required field missing`。
 
 ### §17.2 状态机
 
@@ -891,11 +968,21 @@ pending → reviewing → done
 pending      → done | abandoned
 ```
 
-不允许：`done` / `abandoned` → 任何状态（终态）。
+不允许（不可逆）：
+
+```text
+reviewing  → pending
+done       → 任何状态
+abandoned  → 任何状态
+```
+
+终态仍可改 `title` / `content` / `tags` / 追加 `comment`，直到 retention 删除。非法拖拽 / 非法 `status` → `invalid status transition: <from> → <to>`，条目留在原状态。
+
+评论不改 status：效果不够就留在 `reviewing` 并评论，Agent 改 `content` 再回复。
 
 ### §17.3 响应
 
-返回更新后的完整 inbox 条目（与 `inbox.get` 响应相同 schema）。
+返回更新后的完整 inbox 条目（与 `inbox.get` 响应相同 schema，含 `comments`）。
 
 ### §17.4 错误
 
@@ -930,8 +1017,9 @@ pending      → done | abandoned
 | `created_at` | RFC3339 | yes | 创建时间 |
 | `created_by` | string | yes | 客户端 id |
 | `tags` | []string | no | 标签 |
+| `comment_count` | int | yes | 评论条数。全文只在 `inbox.get` |
 
-列表**不**返回 `warnings`（看板只要摘要）。敏感命中看 `inbox.get` / `inbox.append` / `inbox.update`。
+列表**不**返回 `warnings` / `comments` 全文（看板只要摘要）。敏感命中看 `inbox.get` / `inbox.append` / `inbox.update`。
 
 `done` / `abandoned` 超过 `retention_days` 不返回（已自动删除）。
 
@@ -956,6 +1044,7 @@ pending      → done | abandoned
 | `content` | string | yes | Markdown 正文 |
 | `tags` | []string | no | 标签 |
 | `updated_at` | RFC3339 | yes | 最后更新时间 |
+| `comments` | []Comment | yes | 时间正序。形状见 §12.4。无评论 = `[]` |
 | `warnings` | []string | no | 本次读时 rescan `content`。**不**从 `{id}.md` 读出来。敏感命中时有值，不拒绝 |
 
 ### §19.3 错误
@@ -973,10 +1062,13 @@ pending      → done | abandoned
 | 字段 | 类型 | 必含 | 默认 | 说明 |
 |---|---|---|---|---|
 | `limit` | int | no | 100 | 返回条数 |
-| `since` | RFC3339 | no | - | 时间下限 |
+| `since` | RFC3339 | no | - | 时间下限（含）。MCP 本工具只用 since（「从某时起到现在」） |
+| `until` | RFC3339 | no | - | 时间上限（含）。**仅 webUI** `GET /api/audit/recent` 支持；MCP `audit.list_recent` 不收这个字段 |
 | `tool` | string | no | - | 工具名过滤 |
 | `client_id` | string | no | - | 客户端过滤 |
 | `result_status` | enum | no | all | `success` / `error` / `unauthorized` / `forbidden` / `all` |
+
+webUI 两个时间控件对应 `since` / `until`。值为空就不传。前端把 `datetime-local` 转 RFC3339；转失败停在前端，提示「请输入有效的日期和时间」，不要把坏字符串交给后端。`until` < `since` → `invalid_argument`。
 
 ### §20.2 响应元素
 
@@ -1184,6 +1276,8 @@ Token / 审计不进 `notes`：
 CREATE UNIQUE INDEX idx_auth_tokens_active_name ON auth_tokens(name) WHERE status='active';
 ```
 
+`description` 是创建时用户填的说明，**列表接口必须原样返回**；webUI 卡片要渲染这一行，不能只进库。签发 / 轮换的响应里明文 `token` 只出现一次，同时回 `description`。签发 / 轮换 / 撤销的页面交互见设计文档 §6.4。
+
 ```sql
 -- 主表
 notes(
@@ -1229,6 +1323,21 @@ backlinks(
 )
 ```
 
+### §23.1 模板（webUI，`{runtime}/templates/`）
+
+模板不是 SQLite 表，是运行时目录里的 json / md。每条一份文件：
+
+| 字段 | 类型 | 必含 | 说明 |
+|---|---|---|---|
+| `id` | string | yes | 稳定 id |
+| `kind` | enum | yes | `inbox` / `proposal` / `token`。决定用在哪张创建表单 |
+| `name` | string | yes | 下拉显示名 |
+| `title` / `content` / `tags` | — | inbox | 预填待办 |
+| `target_type` / `operation` / `section` / `payload` / `reason` | — | proposal | 预填提案骨架 |
+| `token_name` / `description` / `scopes` | — | token | 预填签发表单（name 是建议值，签发时仍要人确认） |
+
+选用模板：只填空字段，已填的不覆盖。没有「选模板就跳过创建确认」。
+
 ---
 
 ## §24. 状态机汇总
@@ -1245,7 +1354,9 @@ conflict = 暂停态（不是终态，可回到 approved 重试）
 
 没有 `pending → conflict`：创建时校验失败是控制层拒绝，不写 receipt。3-way 只发生在用户点同意、进入 `approved` 之后。
 
-终态：`applied` / `rejected`。`conflict` 是**暂停态**——用户编辑 payload 后救回 `approved`。救回时**重读当前 HEAD 作为新 `base_commit`**（旧 base 大概率已经过时）。也可以明确「只改 payload、不换 base」——再冲突就再停。默认换 base。
+终态：`applied` / `rejected`。这两态 **禁止** `proposal.update`、禁止再批准、禁止再 apply。要再改正式正文 → 开新 proposal。
+
+`conflict` 是**暂停态**——用户或 Agent 编辑 payload 后救回 `approved`。救回时**重读当前 HEAD 作为新 `base_commit`**（旧 base 大概率已经过时）。也可以明确「只改 payload、不换 base」——再冲突就再停。默认换 base。`pending` / `conflict` 可追加评论；评论不改 status。
 
 ### §24.2 Inbox
 
@@ -1256,6 +1367,8 @@ pending  → done | abandoned
 ```
 
 终态：`done` / `abandoned`。`done` / `abandoned` 超过 `retention_days` 自动删除。
+
+不可逆：`reviewing → pending` 非法；终态不能拖回。终态仍可改正文 / 追加评论。评论不改 status。`reviewing` 的人审：够了 → `done`；不够 → 留评论让 Agent 继续改 content。
 
 ### §24.3 Context Pack 合成（context.startup）
 
@@ -1281,10 +1394,12 @@ score = access_count * exp(-elapsed_days / HALF_LIFE_DAYS)
 
 ### §25.1 access 写入
 
-每次 `knowledge.get` / `context.get` / `project.get` / `skill.get` / `mcp.get` 命中时：
+每次 MCP `knowledge.get` / `context.get` / `project.get` / `skill.get` / `mcp.get` 命中时：
 - `access_count += 1`
 - `last_access_at = now`
 - 立即 fsync 持久化（不依赖优雅退出）
+
+**不加 count**：`knowledge.search`、各 `list`、`workbase.identity`、inbox / proposal、后台 `/api/knowledge/search`、后台 `/api/knowledge?id=`、公开博客浏览。空榜（没有任何 get）是合法状态，webUI 显示说明文案，不造假条。
 
 ### §25.2 Hot 排序返回
 
@@ -1312,6 +1427,7 @@ D:/Code/Front-end/博客/server/mcp/.workbase/  # 运行时目录（不进 Git�
 ├── config.yaml                  # 不进 Git
 ├── auth.sqlite                  # auth_tokens
 ├── index/notes.sqlite           # notes / notes_fts / links / backlinks
+├── templates/                   # webUI 模板 json/md（§23.1）
 ├── proposals/                   # *.md
 ├── inbox/                       # {id}.md
 └── audit/audit.sqlite           # audit_log
